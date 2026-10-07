@@ -9,12 +9,12 @@
   const LEGACY_KEY = 'nova-learning-grade5-v3';
   const SUBJECT_NAMES = Object.keys(SUBJECTS);
   const BUDDIES = [
-    {id:'alex',name:'Alex',img:'buddy-alex.jpg',line:'We’ll figure it out together.',vibe:'Confident problem solver'},
-    {id:'mia',name:'Mia',img:'buddy-mia.jpg',line:'Let’s make this easy to understand.',vibe:'Calm creative thinker'},
-    {id:'leo',name:'Leo',img:'buddy-leo.jpg',line:'Ready for the next challenge?',vibe:'Curious challenge seeker'},
-    {id:'maya',name:'Maya',img:'buddy-maya.jpg',line:'Small steps. Big progress.',vibe:'Positive steady learner'},
-    {id:'noah',name:'Noah',img:'buddy-noah.jpg',line:'I’ll help you spot the pattern.',vibe:'Logical pattern finder'},
-    {id:'zara',name:'Zara',img:'buddy-zara.jpg',line:'Let’s learn it your way.',vibe:'Bright independent explorer'}
+    {id:'alex',name:'Alex',img:'buddy-alex.jpg',line:'We’ll figure it out together.',vibe:'Puzzle pro'},
+    {id:'mia',name:'Mia',img:'buddy-mia.jpg',line:'Let’s make this easy to understand.',vibe:'Creative thinker'},
+    {id:'leo',name:'Leo',img:'buddy-leo.jpg',line:'Ready for the next challenge?',vibe:'Challenge seeker'},
+    {id:'maya',name:'Maya',img:'buddy-maya.jpg',line:'Small steps. Big progress.',vibe:'Positive explorer'},
+    {id:'noah',name:'Noah',img:'buddy-noah.jpg',line:'I’ll help you spot the pattern.',vibe:'Pattern finder'},
+    {id:'zara',name:'Zara',img:'buddy-zara.jpg',line:'Let’s learn it your way.',vibe:'Bright explorer'}
   ];
   function currentBuddy(){ return BUDDIES.find(b=>b.id===state?.learner?.buddy) || BUDDIES[0]; }
   function buddyById(id){ return BUDDIES.find(b=>b.id===id) || BUDDIES[0]; }
@@ -116,24 +116,25 @@
       els.auth.innerHTML=`
       <div class="auth-card setup-card">
         <div class="auth-copy">
-          <span class="kicker">WELCOME TO LEARNING BUDDY</span>
-          <h1>Choose your Learning Buddy.</h1>
-          <p>Set up one simple Grade 5 home-learning profile, then pick a buddy around the learner’s age to guide lessons, hints and knowledge checks.</p>
+          <span class="kicker">LEARNING BUDDY · GRADE 5</span>
+          <h1>Pick your buddy. Start your adventure.</h1>
+          <p>Choose someone your age to learn alongside you. Your buddy gives hints, explains tricky bits and celebrates every win.</p>
           <form id="setupForm" class="form-grid">
-            <div class="field"><label for="setupName">Learner name</label><input id="setupName" maxlength="24" autocomplete="given-name" placeholder="First name" required><small>Learning Buddy uses this name for friendly greetings.</small></div>
-            <div class="field"><label>Pick a learning buddy</label>${buddyChoices('alex','setupBuddy')}<small>The buddy is a guide, not a teacher character. You can change it later.</small></div>
+            <div class="field"><label for="setupName">What should we call you?</label><input id="setupName" maxlength="24" autocomplete="given-name" placeholder="Your first name" required><small>This is the name you’ll see in lessons and progress.</small></div>
+            <div class="field"><label>Choose your Learning Buddy</label>${buddyChoices('alex','setupBuddy')}<small class="buddy-help">Tap a buddy to choose them. You can swap later without losing progress.</small></div>
+            <div class="grownup-strip"><span>🔒</span><div><strong>Grown-up setup</strong><small>Add a parent PIN for reports and settings.</small></div></div>
             <div class="pin-row">
-              <div class="field"><label for="learnerPin">Learner PIN (optional)</label><input id="learnerPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits"><small>Leave blank for one-tap learner sign in.</small></div>
-              <div class="field"><label for="parentPin">Parent PIN</label><input id="parentPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits" required><small>Locks the parent dashboard and settings.</small></div>
+              <div class="field"><label for="learnerPin">Learner PIN <em>optional</em></label><input id="learnerPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="Leave blank for one tap"><small>Only add one if you want a learner lock.</small></div>
+              <div class="field"><label for="parentPin">Parent PIN</label><input id="parentPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits" required><small>Keeps the grown-up dashboard private.</small></div>
             </div>
-            <button class="primary-button wide" type="submit">Start with my buddy</button>
+            <button class="primary-button wide start-button" type="submit">Let’s start learning →</button>
           </form>
         </div>
-        <div class="auth-art"><img id="authBuddyPreview" src="buddy-alex.jpg" alt="Alex learning buddy"><div class="art-label"><strong id="authBuddyName">Alex is ready.</strong><p>Learn a little, try it, check understanding, get a hint when needed, then keep moving.</p></div></div>
+        <div class="auth-art"><img id="authBuddyPreview" src="buddy-alex.jpg" alt="Alex learning buddy"><div class="art-label"><strong id="authBuddyName">Alex is ready!</strong><p>Learn it. Try it. Get a hint. Keep going.</p></div></div>
       </div>`;
       els.auth.querySelectorAll('input[name="setupBuddy"]').forEach(r=>r.addEventListener('change',()=>{
         els.auth.querySelectorAll('.buddy-option').forEach(o=>o.classList.toggle('selected',o.querySelector('input').checked));
-        const b=buddyById(r.value); document.getElementById('authBuddyPreview').src=b.img; document.getElementById('authBuddyPreview').alt=b.name+' learning buddy'; document.getElementById('authBuddyName').textContent=b.name+' is ready.';
+        const b=buddyById(r.value); document.getElementById('authBuddyPreview').src=b.img; document.getElementById('authBuddyPreview').alt=b.name+' learning buddy'; document.getElementById('authBuddyName').textContent=b.name+' is ready!';
       }));
       document.getElementById('setupForm').addEventListener('submit',async e=>{
         e.preventDefault(); const name=document.getElementById('setupName').value.trim(); const lp=document.getElementById('learnerPin').value.trim(); const pp=document.getElementById('parentPin').value.trim(); const buddy=document.querySelector('input[name="setupBuddy"]:checked')?.value||'alex';
@@ -145,6 +146,7 @@
       els.auth.innerHTML=`
       <div class="auth-card">
         <div class="auth-copy">
+          <div class="login-buddy"><img src="${currentBuddy().img}" alt=""><div><span>YOUR LEARNING BUDDY</span><strong>${esc(currentBuddy().name)}</strong></div></div>
           <span class="kicker">WELCOME BACK</span>
           <h1>Hi, ${esc(state.learner.name)}.</h1>
           <p>${needsPin?'Enter your learner PIN to pick up exactly where you left off.':'Your learning progress is ready on this device.'}</p>
@@ -183,13 +185,22 @@
         <div class="hero-copy"><span class="kicker">YOUR HOME LEARNING DASHBOARD</span><h1>Hi, ${esc(name)}. What shall we learn today?</h1><p>Choose a subject, then decide whether you want to learn a concept, take a guided lesson, or test what you know.</p><div class="hero-actions"><button id="continueBtn" class="primary-button">Continue learning</button><button id="dailyMixBtn" class="secondary-button">Quick daily mix</button><button id="changeBuddyBtn" class="soft-button">Change buddy</button></div></div>
         <div class="hero-image"><img src="${currentBuddy().img}" alt="${esc(currentBuddy().name)} learning buddy"></div><div class="speech-chip"><strong>${esc(currentBuddy().name)}</strong><br>“${esc(currentBuddy().line)}”</div>
       </section>
-      <section class="today-strip"><div class="today-card"><div class="today-icon">✦</div><div><small>Today</small><strong>${completedToday?completedToday+' session'+(completedToday===1?'':'s')+' complete':'Ready when you are'}</strong><small>Parent goal: ${state.parent.weeklyGoal} learning days this week</small></div></div><div class="mini-stat"><span class="label">Learning streak</span><strong>${streak} day${streak===1?'':'s'}</strong><small>Regular practice matters more than perfect scores.</small></div><div class="mini-stat"><span class="label">Knowledge checks</span><strong>${totalAnswers().toLocaleString()}</strong><small>${totalAnswers()?overall+'% correct overall':'Build your first results'}</small></div><div class="mini-stat"><span class="label">Question library</span><strong>${BANK.length.toLocaleString()}+</strong><small>Across Grade 5 subjects and enrichment.</small></div></section>
-      <div class="section-head"><div><span class="eyebrow">CHOOSE A SUBJECT</span><h2>Your learning library</h2><p>Big buttons, simple choices, no teams and no leaderboards.</p></div></div>
+      <section class="today-strip"><div class="today-card"><div class="today-icon">✨</div><div><small>Today</small><strong>${completedToday?completedToday+' session'+(completedToday===1?'':'s')+' complete':'Your next win starts here'}</strong><small>Goal: ${state.parent.weeklyGoal} learning days this week</small></div></div><div class="mini-stat"><span class="label">Learning streak</span><strong>${streak} day${streak===1?'':'s'}</strong><small>Keep your rhythm going.</small></div><div class="mini-stat"><span class="label">Stars earned</span><strong>${totalCorrect().toLocaleString()} ★</strong><small>One star for every correct check.</small></div><div class="mini-stat"><span class="label">Accuracy</span><strong>${totalAnswers()?overall+'%':'—'}</strong><small>${totalAnswers()?totalAnswers().toLocaleString()+' checks completed':'Complete your first check'}</small></div></section>
+      <div class="section-head mission-head"><div><span class="eyebrow">TODAY’S MISSIONS</span><h2>Pick a quick win</h2><p>Short activities when you want to jump straight in.</p></div></div>
+      <section class="mission-grid">
+        <button id="quickFourBtn" class="mission-card"><span class="mission-icon">⚡</span><strong>Quick 4</strong><small>Four mixed questions</small><i>2–4 min</i></button>
+        <button id="surpriseBtn" class="mission-card"><span class="mission-icon">🎲</span><strong>Surprise me</strong><small>A random mini lesson</small><i>5–8 min</i></button>
+        <button id="challengeBtn" class="mission-card"><span class="mission-icon">🏆</span><strong>Challenge me</strong><small>Five tougher checks</small><i>No hints</i></button>
+      </section>
+      <div class="section-head"><div><span class="eyebrow">CHOOSE A SUBJECT</span><h2>Explore your subjects</h2><p>Pick a subject, then learn it, practise it or test yourself.</p></div></div>
       <section class="subject-grid">${subjectCards}</section>${focus}`;
     els.home.querySelectorAll('[data-subject]').forEach(b=>b.onclick=()=>{currentSubject=b.dataset.subject;currentMode=null;setView('subject');});
     document.getElementById('continueBtn').onclick=()=>continueLearning();
     document.getElementById('dailyMixBtn').onclick=()=>startDailyMix();
     document.getElementById('changeBuddyBtn').onclick=()=>openBuddyChooser();
+    document.getElementById('quickFourBtn').onclick=()=>startDailyMix(4,'Quick 4','Four fast questions from across your subjects.');
+    document.getElementById('surpriseBtn').onclick=()=>startSurpriseLesson();
+    document.getElementById('challengeBtn').onclick=()=>startChallengeFive();
     if(document.getElementById('focusStart')) document.getElementById('focusStart').onclick=()=>startFocusQuiz();
   }
   function continueLearning(){
@@ -268,12 +279,25 @@
     session={subject:'Mathematics',unit,mode:'quiz',steps:[...qs.map((q,i)=>({type:'question',q,showFeedback:false,hints:false,label:`Question ${i+1}`})),{type:'recap',title:'Focus check complete',body:'Your current-school-focus result is ready.'}],index:0,answers:[],started:Date.now(),finished:false};
     const style=getSubjectConfig('Mathematics');els.session.style.setProperty('--session-accent',style.accent);els.session.style.setProperty('--session-tint',style.tint);els.session.classList.remove('hidden');renderSessionStep();
   }
-  function startDailyMix(){
+  function startDailyMix(count=8,title='Daily Mix',summary='A short mixed-subject check.'){
     const subjects=['Mathematics','English Language Arts','Science','Social Studies']; const qs=[];
-    for(const s of subjects){ const cfg=getSubjectConfig(s); const u=cfg.units[Math.floor(Math.random()*cfg.units.length)]; qs.push(...questionsForUnit(s,u,2)); }
-    const mixedUnit={id:'daily-mix',title:'Daily Mix',summary:'A short mixed-subject check.',teach:[],example:'',challenge:'',standards:'Grade 5 mixed review',strands:[]};
-    session={subject:'Mixed',unit:mixedUnit,mode:'quiz',steps:[...shuffle(qs).slice(0,8).map((q,i)=>({type:'question',q,showFeedback:false,hints:false,label:`Question ${i+1}`})),{type:'recap',title:'Daily mix complete',body:'Nice work across several subjects.'}],index:0,answers:[],started:Date.now(),finished:false};
-    els.session.style.setProperty('--session-accent','#6c5ce7');els.session.style.setProperty('--session-tint','#f0efff');els.session.classList.remove('hidden');renderSessionStep();
+    for(const s of subjects){ const cfg=getSubjectConfig(s); const u=cfg.units[Math.floor(Math.random()*cfg.units.length)]; qs.push(...questionsForUnit(s,u,Math.max(2,Math.ceil(count/subjects.length)))); }
+    const mixedUnit={id:title==='Quick 4'?'quick-four':'daily-mix',title,summary,teach:[],example:'',challenge:'',standards:'Grade 5 mixed review',strands:[]};
+    session={subject:'Mixed',unit:mixedUnit,mode:'quiz',steps:[...shuffle(qs).slice(0,count).map((q,i)=>({type:'question',q,showFeedback:false,hints:false,label:`Question ${i+1}`})),{type:'recap',title:`${title} complete!`,body:'Nice work across several subjects.'}],index:0,answers:[],started:Date.now(),finished:false};
+    els.session.style.setProperty('--session-accent','#1f6fff');els.session.style.setProperty('--session-tint','#eaf4ff');els.session.classList.remove('hidden');renderSessionStep();
+  }
+  function startSurpriseLesson(){
+    const subject=SUBJECT_NAMES[Math.floor(Math.random()*SUBJECT_NAMES.length)]; const cfg=getSubjectConfig(subject);
+    if(!cfg.units.length)return toast('No lesson is available yet.');
+    const unit=cfg.units[Math.floor(Math.random()*cfg.units.length)]; currentSubject=subject;currentMode='module';startUnit(subject,unit.id,'module');
+  }
+  function startChallengeFive(){
+    const subject=SUBJECT_NAMES[Math.floor(Math.random()*SUBJECT_NAMES.length)]; const cfg=getSubjectConfig(subject);
+    if(!cfg.units.length)return toast('No challenge is available yet.');
+    const unit=cfg.units[Math.floor(Math.random()*cfg.units.length)]; const qs=questionsForUnit(subject,unit,5);
+    const challengeUnit={...unit,id:'challenge-'+unit.id,title:'Challenge: '+unit.title};
+    session={subject,unit:challengeUnit,mode:'quiz',steps:[...qs.map((q,i)=>({type:'question',q,showFeedback:false,hints:false,label:`Challenge ${i+1}`})),{type:'recap',title:'Challenge complete!',body:'You took on five checks without hints.'}],index:0,answers:[],started:Date.now(),finished:false};
+    const style=getSubjectConfig(subject);els.session.style.setProperty('--session-accent',style.accent);els.session.style.setProperty('--session-tint',style.tint);els.session.classList.remove('hidden');renderSessionStep();
   }
   function renderSessionStep(){
     if(!session)return; const step=session.steps[session.index]; const total=session.steps.length; els.sessionFill.style.width=`${Math.round((session.index/Math.max(1,total-1))*100)}%`; els.sessionCount.textContent=`${Math.min(session.index+1,total)} / ${total}`;
@@ -305,9 +329,9 @@
     };
   }
   function renderRecapStep(step){
-    if(!session.finished) finishSession(); const answers=session.answers, correct=answers.filter(a=>a.correct).length, total=answers.length, score=pct(correct,total); const isQuiz=session.mode==='quiz'; const message=isQuiz?(score>=90?'Excellent result.':score>=70?'Good result — review the missed ideas next.':'This test found useful areas to revisit.'):'You worked through teaching and knowledge checks, not just a score.';
+    if(!session.finished) finishSession(); const answers=session.answers, correct=answers.filter(a=>a.correct).length, total=answers.length, score=pct(correct,total); const isQuiz=session.mode==='quiz'; const message=isQuiz?(score>=90?'Brilliant work — you smashed it!':score>=70?'Strong work — you’re getting it.':'Good effort — now we know what to practise next.'):'Nice work — you learned it, tried it and checked your understanding.';
     const review=isQuiz?answers.map((a,i)=>`<div class="review-row"><b>${a.correct?'✓':'•'}</b><span>${a.correct?'Correct':`Review: ${esc(a.answer)}`}</span></div>`).join(''):'';
-    els.sessionStage.innerHTML=`<article class="lesson-card"><div class="quiz-summary"><div class="score-orb">${total?score+'%':'✓'}</div><span class="eyebrow">${esc(modeLabel(session.mode))}</span><h1>${esc(step.title)}</h1><p>${esc(message)}</p>${isQuiz?`<p><b>${correct} of ${total}</b> knowledge checks correct.</p><div class="quiz-review">${review}</div>`:`<div class="big-idea"><strong>What happens next</strong>${esc(step.body)}</div>`}<div class="hero-actions" style="justify-content:center"><button id="sessionHome" class="primary-button">Back to learning</button>${session.subject!=='Mixed'&&session.unit.id!=='school-focus'?'<button id="repeatUnit" class="secondary-button">Try another activity</button>':''}</div></div></article>`;
+    els.sessionStage.innerHTML=`<article class="lesson-card"><div class="quiz-summary"><div class="score-orb">${total?score+'%':'✓'}</div><span class="eyebrow">${esc(modeLabel(session.mode))}</span><h1>${esc(step.title)}</h1><p>${esc(message)}</p>${isQuiz?`<p><b>${correct} of ${total}</b> correct · <b>+${correct} ★</b> earned</p><div class="quiz-review">${review}</div>`:`<div class="big-idea"><strong>What happens next</strong>${esc(step.body)}</div>`}<div class="hero-actions" style="justify-content:center"><button id="sessionHome" class="primary-button">Back to learning</button>${session.subject!=='Mixed'&&session.unit.id!=='school-focus'?'<button id="repeatUnit" class="secondary-button">Try another activity</button>':''}</div></div></article>`;
     document.getElementById('sessionHome').onclick=closeSession;
     if(document.getElementById('repeatUnit')) document.getElementById('repeatUnit').onclick=()=>{const s=session.subject;closeSession();currentSubject=s;currentMode=null;setView('subject');};
   }

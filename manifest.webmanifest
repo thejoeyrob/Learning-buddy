@@ -1,25 +1,31 @@
 {
-  "name": "Learning Buddy \u2014 Grade 5",
+  "name": "Learning Buddy — Grade 5",
   "short_name": "Learning Buddy",
   "description": "Visual Grade 5 home learning with a choice of young learning buddies, guided lessons, knowledge checks, quizzes and parent progress dashboard.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f5f8ff",
-  "theme_color": "#1f6fff",
+  "theme_color": "#1471ff",
   "orientation": "any",
   "icons": [
     {
       "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
