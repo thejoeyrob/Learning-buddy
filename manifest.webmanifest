@@ -1,7 +1,7 @@
 {
   "name": "Learning Buddy — Grade 5",
   "short_name": "Learning Buddy",
-  "description": "Visual Grade 5 home learning with a choice of young learning buddies, guided lessons, knowledge checks, quizzes and parent progress dashboard.",
+  "description": "Connected Grade 5 home learning: a parent sets today’s task from their phone and the learner opens directly to a welcome, note and Start button.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

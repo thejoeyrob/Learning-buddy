@@ -5,8 +5,8 @@
   const SUBJECTS = window.LB_SUBJECTS || {};
   const RESOURCES = window.LB_RESOURCES || [];
   const SCHOOL_FOCUS = window.LB_SCHOOL_FOCUS || null;
-  const KEY = 'learning-buddy-grade5-v4';
-  const LEGACY_KEY = 'nova-learning-grade5-v3';
+  const KEY = 'learning-buddy-grade5-v8';
+  const PREVIOUS_KEYS = ['learning-buddy-grade5-v7','learning-buddy-grade5-v4','nova-learning-grade5-v3'];
   const SUBJECT_NAMES = Object.keys(SUBJECTS);
   const BUDDIES = [
     {id:'alex',name:'Alex',img:'buddy-alex.jpg',line:'We’ll figure it out together.',vibe:'Puzzle pro'},
@@ -31,10 +31,12 @@
   };
 
   const defaultState = () => ({
-    version: 3,
+    version: 7,
     setup: false,
     learner: { name:'', pinHash:'', createdAt:'', buddy:'alex' },
     parent: { pinHash:'', weeklyGoal:5, sessionLength:15 },
+    device: { role:'', familyCode:'', parentToken:'', childToken:'', linked:false, linkCode:'' },
+    assignment: { active:null, lastSync:null, pendingCompletion:null },
     settings: { speech:true, hints:true },
     progress: { subject:{}, strand:{}, unit:{}, question:{}, history:[], wrong:[], studyDates:[] }
   });
@@ -48,15 +50,25 @@
   let session = null;
   let deferredInstall = null;
   let toastTimer = null;
+  let activeAssignment = state.assignment?.active || null;
+  let parentSnapshot = null;
+  let pendingAssignmentId = null;
+  let syncTimer = null;
 
   function loadState(){
     try{
-      const raw = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || 'null');
+      let stored = localStorage.getItem(KEY);
+      if(!stored){ for(const k of PREVIOUS_KEYS){ const old=localStorage.getItem(k); if(old){stored=old;break;} } }
+      const raw = JSON.parse(stored || 'null');
       if(!raw) return defaultState();
       const d = defaultState();
       return {
         ...d, ...raw,
-        learner:{...d.learner,...(raw.learner||{})}, parent:{...d.parent,...(raw.parent||{})}, settings:{...d.settings,...(raw.settings||{})},
+        learner:{...d.learner,...(raw.learner||{})},
+        parent:{...d.parent,...(raw.parent||{})},
+        device:{...d.device,...(raw.device||{})},
+        assignment:{...d.assignment,...(raw.assignment||{})},
+        settings:{...d.settings,...(raw.settings||{})},
         progress:{...d.progress,...(raw.progress||{}),subject:{...(raw.progress?.subject||{})},strand:{...(raw.progress?.strand||{})},unit:{...(raw.progress?.unit||{})},question:{...(raw.progress?.question||{})},history:[...(raw.progress?.history||[])],wrong:[...(raw.progress?.wrong||[])],studyDates:[...(raw.progress?.studyDates||[])]}
       };
     }catch(e){ return defaultState(); }
@@ -99,6 +111,55 @@
     let h=2166136261; for(const ch of value){h^=ch.charCodeAt(0);h=Math.imul(h,16777619);} return 'f'+(h>>>0).toString(16);
   }
   function toast(msg){ clearTimeout(toastTimer); els.toast.textContent=msg; els.toast.classList.remove('hidden'); toastTimer=setTimeout(()=>els.toast.classList.add('hidden'),1800); }
+  function localDateKey(d=new Date()){ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
+  function cloudConfig(){
+    let local={}; try{ local=JSON.parse(localStorage.getItem('learning-buddy-cloud-config')||'{}'); }catch(e){}
+    const base=window.LB_CLOUD_CONFIG||{};
+    return {url:String(local.url||base.url||'').replace(/\/$/,''),key:String(local.key||base.key||'')};
+  }
+  function cloudReady(){ const c=cloudConfig(); return /^https:\/\//.test(c.url) && c.key.length>20; }
+  function saveCloudConfig(url,key){ localStorage.setItem('learning-buddy-cloud-config',JSON.stringify({url:String(url||'').trim().replace(/\/$/,''),key:String(key||'').trim()})); }
+  async function cloudRpc(name,payload={}){
+    const c=cloudConfig(); if(!cloudReady()) throw new Error('Cloud connection is not configured.');
+    const res=await fetch(`${c.url}/rest/v1/rpc/${name}`,{method:'POST',headers:{'apikey':c.key,'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const text=await res.text(); let data=null; try{data=text?JSON.parse(text):null}catch(e){data=text}
+    if(!res.ok) throw new Error(data?.message||data?.error_description||data?.hint||`Cloud error ${res.status}`);
+    return data;
+  }
+  function cloudStatusText(){ return navigator.onLine ? (cloudReady()?'Connected configuration':'Cloud setup needed') : 'Offline'; }
+  async function syncChild(silent=true){
+    if(!state.device.childToken || !cloudReady()) return false;
+    try{
+      if(state.assignment.pendingCompletion){
+        const p=state.assignment.pendingCompletion;
+        try{
+          await cloudRpc('lb_child_complete',{p_child_token:state.device.childToken,p_assignment_id:p.assignmentId,p_result:p.result,p_progress_snapshot:p.progress});
+          state.assignment.pendingCompletion=null; saveState();
+        }catch(err){ if(!navigator.onLine) return false; }
+      }
+      const data=await cloudRpc('lb_child_snapshot',{p_child_token:state.device.childToken,p_local_date:localDateKey()});
+      if(data?.learner_name) state.learner.name=data.learner_name;
+      if(data?.buddy_id) state.learner.buddy=data.buddy_id;
+      if(data?.progress_snapshot && Object.keys(data.progress_snapshot).length) state.progress={...defaultState().progress,...data.progress_snapshot};
+      activeAssignment=data?.assignment||null;
+      if(state.assignment.pendingCompletion && activeAssignment?.id===state.assignment.pendingCompletion.assignmentId){ activeAssignment={...activeAssignment,status:'complete',result:state.assignment.pendingCompletion.result}; }
+      state.assignment.active=activeAssignment; state.assignment.lastSync=new Date().toISOString(); saveState();
+      if(!silent) toast('Today’s task refreshed.');
+      return true;
+    }catch(err){ if(!silent) toast(err.message||'Could not refresh right now.'); return false; }
+  }
+  async function refreshParentRemote(silent=true){
+    if(!state.device.parentToken || !cloudReady()) return false;
+    try{
+      parentSnapshot=await cloudRpc('lb_parent_snapshot',{p_parent_token:state.device.parentToken});
+      if(parentSnapshot?.learner_name) state.learner.name=parentSnapshot.learner_name;
+      if(parentSnapshot?.buddy_id) state.learner.buddy=parentSnapshot.buddy_id;
+      if(parentSnapshot?.progress_snapshot && Object.keys(parentSnapshot.progress_snapshot).length) state.progress={...defaultState().progress,...parentSnapshot.progress_snapshot};
+      state.device.familyCode=parentSnapshot?.family_code||state.device.familyCode; saveState();
+      if(!silent) toast('Parent dashboard refreshed.');
+      return true;
+    }catch(err){ if(!silent) toast(err.message||'Could not refresh right now.'); return false; }
+  }
   function setView(name){
     currentView=name;
     [els.home,els.subject,els.progress].forEach(v=>v.classList.add('hidden'));
@@ -109,99 +170,90 @@
     window.scrollTo({top:0,behavior:'smooth'});
   }
 
-  /* ---------- authentication ---------- */
-  function renderAuth(){
-    els.shell.classList.add('hidden'); els.auth.classList.remove('hidden');
-    if(!state.setup){
-      els.auth.innerHTML=`
-      <div class="auth-card setup-card">
-        <div class="auth-copy">
-          <span class="kicker">LEARNING BUDDY · GRADE 5</span>
-          <h1>Pick your buddy. Start your adventure.</h1>
-          <p>Choose someone your age to learn alongside you. Your buddy gives hints, explains tricky bits and celebrates every win.</p>
-          <form id="setupForm" class="form-grid">
-            <div class="field"><label for="setupName">What should we call you?</label><input id="setupName" maxlength="24" autocomplete="given-name" placeholder="Your first name" required><small>This is the name you’ll see in lessons and progress.</small></div>
-            <div class="field"><label>Choose your Learning Buddy</label>${buddyChoices('alex','setupBuddy')}<small class="buddy-help">Tap a buddy to choose them. You can swap later without losing progress.</small></div>
-            <div class="grownup-strip"><span>🔒</span><div><strong>Grown-up setup</strong><small>Add a parent PIN for reports and settings.</small></div></div>
-            <div class="pin-row">
-              <div class="field"><label for="learnerPin">Learner PIN <em>optional</em></label><input id="learnerPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="Leave blank for one tap"><small>Only add one if you want a learner lock.</small></div>
-              <div class="field"><label for="parentPin">Parent PIN</label><input id="parentPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits" required><small>Keeps the grown-up dashboard private.</small></div>
-            </div>
-            <button class="primary-button wide start-button" type="submit">Let’s start learning →</button>
-          </form>
-        </div>
-        <div class="auth-art"><img id="authBuddyPreview" src="buddy-alex.jpg" alt="Alex learning buddy"><div class="art-label"><strong id="authBuddyName">Alex is ready!</strong><p>Learn it. Try it. Get a hint. Keep going.</p></div></div>
-      </div>`;
-      els.auth.querySelectorAll('input[name="setupBuddy"]').forEach(r=>r.addEventListener('change',()=>{
-        els.auth.querySelectorAll('.buddy-option').forEach(o=>o.classList.toggle('selected',o.querySelector('input').checked));
-        const b=buddyById(r.value); document.getElementById('authBuddyPreview').src=b.img; document.getElementById('authBuddyPreview').alt=b.name+' learning buddy'; document.getElementById('authBuddyName').textContent=b.name+' is ready!';
-      }));
-      document.getElementById('setupForm').addEventListener('submit',async e=>{
-        e.preventDefault(); const name=document.getElementById('setupName').value.trim(); const lp=document.getElementById('learnerPin').value.trim(); const pp=document.getElementById('parentPin').value.trim(); const buddy=document.querySelector('input[name="setupBuddy"]:checked')?.value||'alex';
-        if(!name) return toast('Enter the learner name.'); if(lp && !/^\d{4,6}$/.test(lp)) return toast('Learner PIN must be 4–6 digits.'); if(!/^\d{4,6}$/.test(pp)) return toast('Parent PIN must be 4–6 digits.');
-        state.setup=true; state.learner.name=name; state.learner.buddy=buddy; state.learner.pinHash=lp?await pinHash(lp):''; state.learner.createdAt=new Date().toISOString(); state.parent.pinHash=await pinHash(pp); saveState(); learnerUnlocked=true; enterApp();
-      });
-    } else {
-      const needsPin=!!state.learner.pinHash;
-      els.auth.innerHTML=`
-      <div class="auth-card">
-        <div class="auth-copy">
-          <div class="login-buddy"><img src="${currentBuddy().img}" alt=""><div><span>YOUR LEARNING BUDDY</span><strong>${esc(currentBuddy().name)}</strong></div></div>
-          <span class="kicker">WELCOME BACK</span>
-          <h1>Hi, ${esc(state.learner.name)}.</h1>
-          <p>${needsPin?'Enter your learner PIN to pick up exactly where you left off.':'Your learning progress is ready on this device.'}</p>
-          <form id="loginForm" class="form-grid">
-            ${needsPin?'<div class="field"><label for="loginPin">Learner PIN</label><input id="loginPin" class="pin-input" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autocomplete="off" required></div>':''}
-            <button class="primary-button wide" type="submit">Continue as ${esc(state.learner.name)}</button>
-          </form>
-          <div class="auth-actions"><button id="authParent" class="secondary-button">Parent access</button><button id="changeProfile" class="link-button">Reset this device profile</button></div>
-        </div>
-        <div class="auth-art"><img src="${currentBuddy().img}" alt="${esc(currentBuddy().name)} learning buddy"><div class="art-label"><strong>${esc(currentBuddy().name)} is ready.</strong><p>Your lessons, checks, quizzes and progress are stored locally on this device.</p></div></div>
-      </div>`;
-      document.getElementById('loginForm').addEventListener('submit',async e=>{
-        e.preventDefault(); if(needsPin){const entered=document.getElementById('loginPin').value; if(await pinHash(entered)!==state.learner.pinHash) return toast('That learner PIN is not correct.');}
-        learnerUnlocked=true; enterApp();
-      });
-      document.getElementById('authParent').onclick=()=>openParent();
-      document.getElementById('changeProfile').onclick=()=>{ if(confirm('Reset this local learner profile? This erases progress stored on this device.')){localStorage.removeItem(KEY);localStorage.removeItem(LEGACY_KEY);state=defaultState();renderAuth();} };
-    }
+  function stopSyncLoop(){ if(syncTimer){clearInterval(syncTimer);syncTimer=null;} }
+  function startSyncLoop(role){
+    stopSyncLoop();
+    const tick=async()=>{
+      if(document.hidden || !navigator.onLine) return;
+      if(role==='child' && state.device.childToken && learnerUnlocked){
+        const ok=await syncChild(true);
+        if(ok && currentView==='home') renderHome();
+      }
+      if(role==='parent' && state.device.parentToken && parentUnlocked){
+        const ok=await refreshParentRemote(true);
+        if(ok && !els.parent.classList.contains('hidden')){
+          const tab=els.parentDash.querySelector('.parent-tab.active')?.dataset.tab || 'today';
+          renderParentDashboard(tab);
+        }
+      }
+    };
+    syncTimer=setInterval(tick, role==='child'?15000:20000);
   }
-  function enterApp(){ els.auth.classList.add('hidden'); els.shell.classList.remove('hidden'); setView('home'); }
-  function signOut(){ learnerUnlocked=false; parentUnlocked=false; els.shell.classList.add('hidden'); renderAuth(); }
+
+  /* ---------- authentication ---------- */
+  function roleCard(role,icon,title,copy){ return `<button class="role-card" data-role="${role}"><span>${icon}</span><strong>${title}</strong><small>${copy}</small></button>`; }
+  function renderAuth(){
+    stopSyncLoop(); document.body.classList.remove('child-focus-mode');
+    els.shell.classList.add('hidden'); els.auth.classList.remove('hidden'); els.parent.classList.add('hidden');
+    const role=state.device?.role||'';
+    if(!role){
+      els.auth.innerHTML=`<div class="auth-card role-setup-card"><div class="auth-copy"><span class="kicker">LEARNING BUDDY · CONNECTED HOME LEARNING</span><h1>Who is using this device?</h1><p>Set each device once. The parent chooses today’s lesson from their phone; the learner opens straight onto the task.</p><div class="role-grid">${roleCard('parent','👨‍👩‍👧','Parent device','Choose and monitor today’s learning.')}${roleCard('child','⭐','Learner device','Open straight to today’s task.')}</div>${state.setup?'<div class="migration-note"><b>Existing Learning Buddy data found.</b><br>Your saved learner progress will stay on this device while you connect it.</div>':''}</div><div class="auth-art role-art"><img src="${currentBuddy().img}" alt="Learning Buddy"><div class="art-label"><strong>One task. One clear start.</strong><p>No subject hunting or menu maze for the learner.</p></div></div></div>`;
+      els.auth.querySelectorAll('[data-role]').forEach(b=>b.onclick=()=>{state.device.role=b.dataset.role;saveState();renderAuth();});
+      return;
+    }
+    if(role==='parent') return renderParentDeviceAuth();
+    return renderChildDeviceAuth();
+  }
+  function cloudSetupFields(){ const c=cloudConfig(); if(cloudReady()) return `<div class="cloud-setup-box"><div class="connection-line"><span class="status-dot online"></span><div><strong>Cloud connected</strong><small>Parent and learner devices can sync.</small></div></div></div>`; return `<div class="cloud-setup-box"><div class="connection-line"><span class="status-dot"></span><div><strong>Cloud connection</strong><small>${esc(cloudStatusText())}</small></div></div><p class="muted">Cross-device sync needs a dedicated Supabase project. Enter its public project URL and publishable key here, or put them in cloud-config.js before deployment.</p><div class="settings-grid"><div class="field"><label for="cloudUrl">Supabase project URL</label><input id="cloudUrl" value="${esc(c.url)}" placeholder="https://…supabase.co"></div><div class="field"><label for="cloudKey">Publishable key</label><input id="cloudKey" value="${esc(c.key)}" placeholder="sb_publishable_…"></div></div></div>`; }
+  function renderParentDeviceAuth(){
+    if(!state.device.parentToken){
+      els.auth.innerHTML=`<div class="auth-card setup-card parent-device-setup"><div class="auth-copy"><span class="kicker">PARENT DEVICE SETUP</span><h1>Set the learning from your phone.</h1><p>Create the connected learner once. You’ll get a family code and a temporary link code for the child’s device.</p><form id="parentCloudSetup" class="form-grid">${cloudSetupFields()}<div class="field"><label for="setupName">Learner name</label><input id="setupName" maxlength="24" value="${esc(state.learner.name||'')}" placeholder="First name" required></div><div class="field"><label>Choose their Learning Buddy</label>${buddyChoices(state.learner.buddy||'alex','setupBuddy')}</div><div class="field"><label for="parentPin">Parent PIN on this device</label><input id="parentPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits" required><small>This only protects the parent dashboard on this phone.</small></div><button class="primary-button wide" type="submit">Create connected learner →</button><button id="switchDeviceRole" class="link-button" type="button">This should be a learner device</button></form></div><div class="auth-art"><img src="${currentBuddy().img}" alt=""><div class="art-label"><strong>You set the plan.</strong><p>The child gets a simple welcome, today’s note and one Start button.</p></div></div></div>`;
+      els.auth.querySelectorAll('input[name="setupBuddy"]').forEach(r=>r.addEventListener('change',()=>els.auth.querySelectorAll('.buddy-option').forEach(o=>o.classList.toggle('selected',o.querySelector('input').checked))));
+      document.getElementById('switchDeviceRole').onclick=()=>{state.device.role='child';saveState();renderAuth();};
+      document.getElementById('parentCloudSetup').onsubmit=async e=>{e.preventDefault();const url=document.getElementById('cloudUrl')?.value.trim(),key=document.getElementById('cloudKey')?.value.trim();if(url||key)saveCloudConfig(url,key);if(!cloudReady())return toast('Add the Supabase project URL and publishable key first.');const name=document.getElementById('setupName').value.trim();const pin=document.getElementById('parentPin').value.trim();const buddy=document.querySelector('input[name="setupBuddy"]:checked')?.value||'alex';if(!name)return toast('Enter the learner name.');if(!/^\d{4,6}$/.test(pin))return toast('Parent PIN must be 4–6 digits.');try{const data=await cloudRpc('lb_create_family',{p_learner_name:name,p_buddy_id:buddy});state.setup=true;state.learner.name=name;state.learner.buddy=buddy;state.parent.pinHash=await pinHash(pin);state.device.parentToken=data.parent_token;state.device.familyCode=data.family_code;state.device.linkCode=data.child_link_code;saveState();parentUnlocked=true;await enterParentApp(true,'connection');}catch(err){toast(err.message||'Could not create the connected learner.');}};
+      return;
+    }
+    els.auth.innerHTML=`<div class="auth-card"><div class="auth-copy"><span class="kicker">PARENT DEVICE</span><h1>${esc(state.learner.name||'Learner')}’s Learning Buddy</h1><p>Open the parent dashboard to set today’s lesson and see progress from the learner device.</p><form id="parentDeviceLogin" class="form-grid"><div class="field"><label for="parentPinLogin">Parent PIN</label><input id="parentPinLogin" class="pin-input" inputmode="numeric" maxlength="6" autocomplete="off" required></div><button class="primary-button wide" type="submit">Open parent dashboard</button></form><div class="auth-actions"><button id="changeRoleParent" class="link-button">Change this device role</button></div></div><div class="auth-art"><img src="${currentBuddy().img}" alt=""><div class="art-label"><strong>Today’s learning, from your phone.</strong><p>Assign a lesson, write a short note and see when it is completed.</p></div></div></div>`;
+    document.getElementById('parentDeviceLogin').onsubmit=async e=>{e.preventDefault();const pin=document.getElementById('parentPinLogin').value;if(await pinHash(pin)!==state.parent.pinHash)return toast('Parent PIN is not correct.');parentUnlocked=true;await enterParentApp(true);};
+    document.getElementById('changeRoleParent').onclick=()=>{if(confirm('Change the role of this device? The cloud family remains intact.')){state.device.role='';state.device.parentToken='';saveState();renderAuth();}};
+  }
+  function renderChildDeviceAuth(){
+    if(state.device.childToken){ setTimeout(()=>enterChildApp(),0); return; }
+    els.auth.innerHTML=`<div class="auth-card child-link-card"><div class="auth-copy"><span class="kicker">LEARNER DEVICE</span><h1>Connect to your grown-up.</h1><p>This is a one-time link. After that, Learning Buddy opens straight onto today’s work.</p><form id="childLinkForm" class="form-grid">${cloudSetupFields()}<div class="pin-row"><div class="field"><label for="familyCode">Family code</label><input id="familyCode" maxlength="8" autocapitalize="characters" placeholder="8 characters" required></div><div class="field"><label for="linkCode">Link code</label><input id="linkCode" maxlength="6" autocapitalize="characters" placeholder="6 characters" required></div></div><button class="primary-button wide" type="submit">Connect this learner device →</button><button id="switchDeviceRole" class="link-button" type="button">This should be a parent device</button></form></div><div class="auth-art"><img src="${currentBuddy().img}" alt=""><div class="art-label"><strong>Then it stays simple.</strong><p>Welcome → today’s task → Start.</p></div></div></div>`;
+    document.getElementById('switchDeviceRole').onclick=()=>{state.device.role='parent';saveState();renderAuth();};
+    document.getElementById('childLinkForm').onsubmit=async e=>{e.preventDefault();const url=document.getElementById('cloudUrl')?.value.trim(),key=document.getElementById('cloudKey')?.value.trim();if(url||key)saveCloudConfig(url,key);if(!cloudReady())return toast('Add the Supabase project URL and publishable key first.');const family=document.getElementById('familyCode').value.trim().toUpperCase(),link=document.getElementById('linkCode').value.trim().toUpperCase();try{const data=await cloudRpc('lb_child_claim',{p_family_code:family,p_link_code:link});state.setup=true;state.device.childToken=data.child_token;state.device.familyCode=data.family_code;state.device.linked=true;state.learner.name=data.learner_name||state.learner.name;state.learner.buddy=data.buddy_id||state.learner.buddy;if(data.progress_snapshot&&Object.keys(data.progress_snapshot).length)state.progress={...defaultState().progress,...data.progress_snapshot};saveState();await enterChildApp();}catch(err){toast(err.message||'That family/link code did not work.');}};
+  }
+  async function enterChildApp(){ learnerUnlocked=true; parentUnlocked=false; document.body.classList.add('child-focus-mode'); els.auth.classList.add('hidden'); els.shell.classList.remove('hidden'); document.getElementById('parentBtn').classList.add('hidden'); document.getElementById('navLogout').classList.add('hidden'); await syncChild(true); setView('home'); startSyncLoop('child'); }
+  async function enterParentApp(refresh=false,tab='today'){ learnerUnlocked=false; parentUnlocked=true; document.body.classList.remove('child-focus-mode'); els.auth.classList.add('hidden');els.shell.classList.add('hidden');els.parent.classList.remove('hidden');els.parentGate.classList.add('hidden');els.parentDash.classList.remove('hidden');if(refresh)await refreshParentRemote(true);renderParentDashboard(tab);startSyncLoop('parent'); }
+  function signOut(){ learnerUnlocked=false; parentUnlocked=false; stopSyncLoop(); els.shell.classList.add('hidden'); els.parent.classList.add('hidden'); renderAuth(); }
 
   /* ---------- home / subjects ---------- */
   function renderHome(){
-    const name=state.learner.name || 'Learner'; const overall=totalAnswers()?pct(totalCorrect(),totalAnswers()):0; const streak=studyStreak();
-    const completedToday=state.progress.history.filter(h=>todayKey(new Date(h.date))===todayKey()).length;
-    const subjectCards=SUBJECT_NAMES.map(subject=>{
-      const c=getSubjectConfig(subject), p=subjectProgress(subject), s=subjectStats(subject);
-      return `<button class="subject-card" data-subject="${esc(subject)}" style="--accent:${c.accent}">
-        <img src="${c.icon}" alt=""><div class="subject-body"><div class="subject-title-row"><h3>${esc(subject)}</h3><span class="progress-pill">${p?p+'%':'New'}</span></div><p>${esc(c.desc)}</p><div class="subject-meter"><i style="width:${p}%;background:${c.accent}"></i></div><div class="subject-footer"><span>${c.units.length} learning units</span><span>${s.total?pct(s.correct,s.total)+'% checks':'Start here'} →</span></div></div>
-      </button>`;
-    }).join('');
-    const focus=SCHOOL_FOCUS?`<div class="focus-card"><div><span class="kicker" style="color:#facc15">SCHOOL FOCUS</span><h3 style="margin:6px 0 0;font-size:22px">${esc(SCHOOL_FOCUS.title)}</h3><p>${esc(SCHOOL_FOCUS.subtitle)}</p><div class="tags">${SCHOOL_FOCUS.standards.map(s=>`<span class="tag">${esc(s)}</span>`).join('')}</div></div><button id="focusStart" class="primary-button">Start focus quiz</button></div>`:'';
-    els.home.innerHTML=`
-      <section class="hero">
-        <div class="hero-copy"><span class="kicker">YOUR HOME LEARNING DASHBOARD</span><h1>Hi, ${esc(name)}. What shall we learn today?</h1><p>Choose a subject, then decide whether you want to learn a concept, take a guided lesson, or test what you know.</p><div class="hero-actions"><button id="continueBtn" class="primary-button">Continue learning</button><button id="dailyMixBtn" class="secondary-button">Quick daily mix</button><button id="changeBuddyBtn" class="soft-button">Change buddy</button></div></div>
-        <div class="hero-image"><img src="${currentBuddy().img}" alt="${esc(currentBuddy().name)} learning buddy"></div><div class="speech-chip"><strong>${esc(currentBuddy().name)}</strong><br>“${esc(currentBuddy().line)}”</div>
-      </section>
-      <section class="today-strip"><div class="today-card"><div class="today-icon">✨</div><div><small>Today</small><strong>${completedToday?completedToday+' session'+(completedToday===1?'':'s')+' complete':'Your next win starts here'}</strong><small>Goal: ${state.parent.weeklyGoal} learning days this week</small></div></div><div class="mini-stat"><span class="label">Learning streak</span><strong>${streak} day${streak===1?'':'s'}</strong><small>Keep your rhythm going.</small></div><div class="mini-stat"><span class="label">Stars earned</span><strong>${totalCorrect().toLocaleString()} ★</strong><small>One star for every correct check.</small></div><div class="mini-stat"><span class="label">Accuracy</span><strong>${totalAnswers()?overall+'%':'—'}</strong><small>${totalAnswers()?totalAnswers().toLocaleString()+' checks completed':'Complete your first check'}</small></div></section>
-      <div class="section-head mission-head"><div><span class="eyebrow">TODAY’S MISSIONS</span><h2>Pick a quick win</h2><p>Short activities when you want to jump straight in.</p></div></div>
-      <section class="mission-grid">
-        <button id="quickFourBtn" class="mission-card"><span class="mission-icon">⚡</span><strong>Quick 4</strong><small>Four mixed questions</small><i>2–4 min</i></button>
-        <button id="surpriseBtn" class="mission-card"><span class="mission-icon">🎲</span><strong>Surprise me</strong><small>A random mini lesson</small><i>5–8 min</i></button>
-        <button id="challengeBtn" class="mission-card"><span class="mission-icon">🏆</span><strong>Challenge me</strong><small>Five tougher checks</small><i>No hints</i></button>
-      </section>
-      <div class="section-head"><div><span class="eyebrow">CHOOSE A SUBJECT</span><h2>Explore your subjects</h2><p>Pick a subject, then learn it, practise it or test yourself.</p></div></div>
-      <section class="subject-grid">${subjectCards}</section>${focus}`;
-    els.home.querySelectorAll('[data-subject]').forEach(b=>b.onclick=()=>{currentSubject=b.dataset.subject;currentMode=null;setView('subject');});
-    document.getElementById('continueBtn').onclick=()=>continueLearning();
-    document.getElementById('dailyMixBtn').onclick=()=>startDailyMix();
-    document.getElementById('changeBuddyBtn').onclick=()=>openBuddyChooser();
-    document.getElementById('quickFourBtn').onclick=()=>startDailyMix(4,'Quick 4','Four fast questions from across your subjects.');
-    document.getElementById('surpriseBtn').onclick=()=>startSurpriseLesson();
-    document.getElementById('challengeBtn').onclick=()=>startChallengeFive();
-    if(document.getElementById('focusStart')) document.getElementById('focusStart').onclick=()=>startFocusQuiz();
+    const name=state.learner.name||'Learner', buddy=currentBuddy(), a=activeAssignment||state.assignment.active;
+    const assignmentReady=a && a.assigned_for===localDateKey();
+    const completed=assignmentReady && a.status==='complete';
+    const cfg=assignmentReady?getSubjectConfig(a.subject):null;
+    const mode=a?.mode||'lesson';
+    const result=a?.result||null;
+    const planLine=mode==='quiz'?'Answer the questions, check your result, then you’re done.':mode==='module'?'Learn the idea, try a few examples, then do a quick knowledge check.':'Learn it, try it with your buddy, then finish with a short knowledge check.';
+    let main='';
+    if(assignmentReady && !completed){
+      main=`<section class="child-task-focus"><div class="task-art"><img src="${cfg.icon}" alt="${esc(a.subject)}"><span>${esc(a.subject)}</span></div><span class="eyebrow">TODAY’S LEARNING</span><h2>${esc(a.title||a.unit_title)}</h2><div class="grownup-note"><span>💬</span><div><small>A NOTE FOR YOU</small><p>${esc(a.note||`Today you’re going to work on ${a.unit_title}. Take your time — ${buddy.name} is here to help.`)}</p></div></div><p class="task-plan">${esc(planLine)}</p><div class="assignment-meta"><span>${esc(modeLabel(mode))}</span><span>${esc(a.unit_title)}</span></div><button id="startTodayTask" class="primary-button child-start-button">${a.status==='in_progress'?'Continue':'Start'} →</button></section>`;
+    }else if(completed){
+      const score=Number(result?.total||0)?Math.round((Number(result.correct||0)/Number(result.total))*100):null;
+      main=`<section class="child-task-focus complete"><div class="celebrate-star">★</div><span class="eyebrow">ALL DONE FOR TODAY</span><h2>Great work, ${esc(name)}!</h2><p>You finished <b>${esc(a.title||a.unit_title)}</b>. Your grown-up can already see that it’s complete.</p>${score!==null?`<div class="child-score"><strong>${score}%</strong><span>${esc(a.subject)} · ${esc(modeLabel(mode))}</span></div>`:''}<button id="refreshToday" class="secondary-button">Check for a new task</button></section>`;
+    }else{
+      main=`<section class="child-task-focus waiting"><div class="waiting-buddy"><img src="${buddy.img}" alt="${esc(buddy.name)}"></div><span class="eyebrow">TODAY’S LEARNING</span><h2>You’re ready.</h2><p>Your grown-up hasn’t set today’s task yet. When they do, it will appear here automatically.</p><button id="refreshToday" class="primary-button child-start-button">Check now</button></section>`;
+    }
+    els.home.innerHTML=`<section class="simple-child-welcome"><div><span class="kicker">WELCOME BACK</span><h1>Hi, ${esc(name)}.</h1><p>${assignmentReady?(completed?'You’ve completed today’s learning.':'Here’s what you’re doing today.'):'Your task will appear here when it’s ready.'}</p></div><div class="simple-buddy"><img src="${buddy.img}" alt="${esc(buddy.name)}"><span><b>${esc(buddy.name)}</b><small>${esc(buddy.line)}</small></span></div></section>${main}<div class="child-sync-line"><span class="status-dot ${navigator.onLine&&cloudReady()?'online':''}"></span><span>${navigator.onLine?(state.assignment.lastSync?'Updated '+new Date(state.assignment.lastSync).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'Connected'):'Offline — today’s task will sync when you reconnect'}</span></div>`;
+    if(document.getElementById('startTodayTask'))document.getElementById('startTodayTask').onclick=startAssignedTask;
+    if(document.getElementById('refreshToday'))document.getElementById('refreshToday').onclick=async()=>{const b=document.getElementById('refreshToday');b.disabled=true;b.textContent='Checking…';await syncChild(false);renderHome();};
+  }
+  async function startAssignedTask(){
+    const a=activeAssignment||state.assignment.active;if(!a)return toast('No task is set for today.');
+    const cfg=getSubjectConfig(a.subject),unit=cfg.units.find(u=>u.id===a.unit_id);if(!unit)return toast('This task needs to be re-assigned by the parent.');
+    try{ if(state.device.childToken&&cloudReady()){const updated=await cloudRpc('lb_child_start',{p_child_token:state.device.childToken,p_assignment_id:a.id});activeAssignment={...a,...updated};state.assignment.active=activeAssignment;saveState();} }catch(err){toast('Starting offline — progress will sync when possible.');}
+    pendingAssignmentId=a.id;currentSubject=a.subject;currentMode=a.mode;startUnit(a.subject,a.unit_id,a.mode);
   }
   function continueLearning(){
     const last=state.progress.history[0];
@@ -271,7 +323,7 @@
       qs.forEach((q,i)=>steps.push({type:'question',q,showFeedback:false,hints:false,label:`Question ${i+1}`}));
       steps.push({type:'recap',title:'Test complete',body:'Your result is ready.'});
     }
-    session={subject,unit,mode,steps,index:0,answers:[],started:Date.now(),finished:false};
+    session={subject,unit,mode,steps,index:0,answers:[],started:Date.now(),finished:false,assignmentId:pendingAssignmentId||null}; pendingAssignmentId=null;
     const style=getSubjectConfig(subject); els.session.style.setProperty('--session-accent',style.accent);els.session.style.setProperty('--session-tint',style.tint);els.session.classList.remove('hidden');renderSessionStep();
   }
   function startFocusQuiz(){
@@ -331,7 +383,7 @@
   function renderRecapStep(step){
     if(!session.finished) finishSession(); const answers=session.answers, correct=answers.filter(a=>a.correct).length, total=answers.length, score=pct(correct,total); const isQuiz=session.mode==='quiz'; const message=isQuiz?(score>=90?'Brilliant work — you smashed it!':score>=70?'Strong work — you’re getting it.':'Good effort — now we know what to practise next.'):'Nice work — you learned it, tried it and checked your understanding.';
     const review=isQuiz?answers.map((a,i)=>`<div class="review-row"><b>${a.correct?'✓':'•'}</b><span>${a.correct?'Correct':`Review: ${esc(a.answer)}`}</span></div>`).join(''):'';
-    els.sessionStage.innerHTML=`<article class="lesson-card"><div class="quiz-summary"><div class="score-orb">${total?score+'%':'✓'}</div><span class="eyebrow">${esc(modeLabel(session.mode))}</span><h1>${esc(step.title)}</h1><p>${esc(message)}</p>${isQuiz?`<p><b>${correct} of ${total}</b> correct · <b>+${correct} ★</b> earned</p><div class="quiz-review">${review}</div>`:`<div class="big-idea"><strong>What happens next</strong>${esc(step.body)}</div>`}<div class="hero-actions" style="justify-content:center"><button id="sessionHome" class="primary-button">Back to learning</button>${session.subject!=='Mixed'&&session.unit.id!=='school-focus'?'<button id="repeatUnit" class="secondary-button">Try another activity</button>':''}</div></div></article>`;
+    els.sessionStage.innerHTML=`<article class="lesson-card"><div class="quiz-summary"><div class="score-orb">${total?score+'%':'✓'}</div><span class="eyebrow">${esc(modeLabel(session.mode))}</span><h1>${esc(step.title)}</h1><p>${esc(message)}</p>${isQuiz?`<p><b>${correct} of ${total}</b> correct · <b>+${correct} ★</b> earned</p><div class="quiz-review">${review}</div>`:`<div class="big-idea"><strong>What happens next</strong>${esc(step.body)}</div>`}<div class="hero-actions" style="justify-content:center"><button id="sessionHome" class="primary-button">${session.assignmentId?'Finish for today':'Back to learning'}</button>${!session.assignmentId&&session.subject!=='Mixed'&&session.unit.id!=='school-focus'?'<button id="repeatUnit" class="secondary-button">Try another activity</button>':''}</div></div></article>`;
     document.getElementById('sessionHome').onclick=closeSession;
     if(document.getElementById('repeatUnit')) document.getElementById('repeatUnit').onclick=()=>{const s=session.subject;closeSession();currentSubject=s;currentMode=null;setView('subject');};
   }
@@ -353,8 +405,14 @@
     }
     state.progress.history.unshift({date:new Date().toISOString(),subject:session.subject,unitId:session.unit.id,unitTitle:session.unit.title,mode:session.mode,correct,total,durationSec}); state.progress.history=state.progress.history.slice(0,250);
     const tk=todayKey(); if(!state.progress.studyDates.includes(tk)) state.progress.studyDates.push(tk); state.progress.studyDates=state.progress.studyDates.slice(-400); saveState();
+    if(session.assignmentId){
+      const result={correct,total,durationSec,subject:session.subject,unitId:session.unit.id,unitTitle:session.unit.title,mode:session.mode,completedAt:new Date().toISOString()};
+      if(activeAssignment){ activeAssignment={...activeAssignment,status:'complete',result}; state.assignment.active=activeAssignment; }
+      state.assignment.pendingCompletion={assignmentId:session.assignmentId,result,progress:state.progress}; saveState();
+      if(state.device.childToken&&cloudReady()) cloudRpc('lb_child_complete',{p_child_token:state.device.childToken,p_assignment_id:session.assignmentId,p_result:result,p_progress_snapshot:state.progress}).then(x=>{activeAssignment={...(activeAssignment||{}),...x};state.assignment.active=activeAssignment;state.assignment.pendingCompletion=null;state.assignment.lastSync=new Date().toISOString();saveState();}).catch(()=>{});
+    }
   }
-  function closeSession(){ if(!session)return; if(!session.finished && session.answers.length && !confirm('Leave this session? Your completed checks are saved, but the activity will not be marked complete.'))return; els.session.classList.add('hidden');session=null; if(currentView==='home')renderHome(); else if(currentView==='progress')renderChildProgress(); else renderSubject(); }
+  function closeSession(){ if(!session)return; if(!session.finished && session.answers.length && !confirm('Leave this session? Your completed checks are saved, but the activity will not be marked complete.'))return; const assigned=!!session.assignmentId; els.session.classList.add('hidden');session=null; if(assigned){currentView='home';renderHome();window.scrollTo({top:0,behavior:'smooth'});} else if(currentView==='home')renderHome(); else if(currentView==='progress')renderChildProgress(); else renderSubject(); }
   function speak(text){ if(!('speechSynthesis'in window))return toast('Read aloud is not available on this device.'); speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text);u.rate=.94;speechSynthesis.speak(u); }
 
   /* ---------- child progress ---------- */
@@ -376,56 +434,61 @@
   }
 
   /* ---------- parent dashboard ---------- */
-  function openParent(){ parentUnlocked=false; els.parent.classList.remove('hidden');els.parentDash.classList.add('hidden');els.parentGate.classList.remove('hidden');renderParentGate(); }
-  function closeParent(){ els.parent.classList.add('hidden');parentUnlocked=false; }
-  function renderParentGate(){
-    els.parentGate.innerHTML=`<div class="gate-head"><div><span class="kicker">PARENT / HOME EDUCATOR</span><h2>Parent dashboard</h2></div><button id="closeParentGate" class="round-button">✕</button></div><p>Enter the parent PIN created during setup. This lock is designed to keep settings and reports out of the learner’s normal flow.</p><form id="parentPinForm" class="form-grid"><div class="field"><label for="parentPinLogin">Parent PIN</label><input id="parentPinLogin" class="pin-input" inputmode="numeric" maxlength="6" autocomplete="off" required></div><button class="primary-button wide" type="submit">Open dashboard</button></form>`;
-    document.getElementById('closeParentGate').onclick=closeParent; document.getElementById('parentPinForm').onsubmit=async e=>{e.preventDefault();const p=document.getElementById('parentPinLogin').value;if(await pinHash(p)!==state.parent.pinHash)return toast('Parent PIN is not correct.');parentUnlocked=true;els.parentGate.classList.add('hidden');els.parentDash.classList.remove('hidden');renderParentDashboard('overview');};
-  }
-  function renderParentDashboard(tab='overview'){
-    const tabs=[['overview','Overview'],['curriculum','Curriculum'],['resources','Teaching resources'],['settings','Settings'],['data','Data']];
-    els.parentDash.innerHTML=`<header class="parent-head"><div><small>PARENT / HOME EDUCATOR</small><h1>${esc(state.learner.name)}’s learning dashboard</h1></div><button id="closeParent" class="round-button light">✕</button></header><nav class="parent-tabs">${tabs.map(([id,label])=>`<button data-tab="${id}" class="parent-tab ${tab===id?'active':''}">${label}</button>`).join('')}</nav><main class="parent-body" id="parentBody"></main>`;
-    document.getElementById('closeParent').onclick=closeParent; els.parentDash.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>renderParentDashboard(b.dataset.tab)); const body=document.getElementById('parentBody');
-    if(tab==='overview') body.innerHTML=parentOverviewHTML();
-    if(tab==='curriculum') body.innerHTML=parentCurriculumHTML();
-    if(tab==='resources') body.innerHTML=parentResourcesHTML();
+  function openParent(){ if(state.device.role==='parent'&&state.device.parentToken){enterParentApp(true);return;} toast('Use a device set up as the parent device.'); }
+  function closeParent(){ els.parent.classList.add('hidden');parentUnlocked=false;renderAuth(); }
+  function renderParentGate(){ renderAuth(); }
+  function renderParentDashboard(tab='today'){
+    const tabs=[['today','Today'],['overview','Progress'],['curriculum','Curriculum'],['settings','Learner'],['connection','Connection']];
+    els.parentDash.innerHTML=`<header class="parent-head"><div><small>PARENT · CONNECTED VIEW</small><h1>${esc(state.learner.name||'Learner')}’s Learning Buddy</h1></div><div class="parent-head-actions"><button id="refreshParent" class="round-button light" title="Refresh">↻</button><button id="closeParent" class="round-button light">✕</button></div></header><nav class="parent-tabs">${tabs.map(([id,label])=>`<button data-tab="${id}" class="parent-tab ${tab===id?'active':''}">${label}</button>`).join('')}</nav><main class="parent-body" id="parentBody"></main>`;
+    document.getElementById('closeParent').onclick=closeParent;document.getElementById('refreshParent').onclick=async()=>{await refreshParentRemote(false);renderParentDashboard(tab);};els.parentDash.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>renderParentDashboard(b.dataset.tab));const body=document.getElementById('parentBody');
+    if(tab==='today'){body.innerHTML=parentTodayHTML();wireParentToday();}
+    if(tab==='overview')body.innerHTML=parentOverviewHTML();
+    if(tab==='curriculum')body.innerHTML=parentCurriculumHTML();
     if(tab==='settings'){body.innerHTML=parentSettingsHTML();wireParentSettings();}
-    if(tab==='data'){body.innerHTML=parentDataHTML();wireParentData();}
+    if(tab==='connection'){body.innerHTML=parentConnectionHTML();wireParentConnection();}
+  }
+  function assignmentFor(date=localDateKey()){ return (parentSnapshot?.assignments||[]).find(a=>a.assigned_for===date)||null; }
+  function parentTodayHTML(){
+    const a=assignmentFor(),initialSubject=a?.subject&&SUBJECTS[a.subject]?a.subject:(SUBJECT_NAMES[0]||''),cfg=getSubjectConfig(initialSubject),units=cfg.units;
+    const status=a?`<div class="assignment-status ${a.status}"><span>${a.status==='complete'?'✓':a.status==='in_progress'?'▶':'●'}</span><div><strong>${a.status==='complete'?'Completed':a.status==='in_progress'?'In progress':'Ready on learner device'}</strong><small>${esc(a.title||a.unit_title)}${a.result?.total?` · ${Math.round(a.result.correct/a.result.total*100)}%`:''}</small></div></div>`:`<div class="assignment-status empty"><span>＋</span><div><strong>No task set for today</strong><small>Choose one below. It will appear on the learner device automatically.</small></div></div>`;
+    return `<section class="parent-today-hero"><div><span class="kicker">TODAY’S PLAN</span><h2>Set one clear task for ${esc(state.learner.name||'the learner')}.</h2><p>The child sees a welcome, your note and one large Start button. Subjects and lesson menus stay on the parent side.</p></div>${status}</section><div class="dashboard-grid parent-task-grid"><section class="admin-card"><h3>Set today’s lesson or task</h3><form id="assignTodayForm" class="form-grid"><div class="settings-grid"><div class="field"><label for="assignSubject">Subject</label><select id="assignSubject">${SUBJECT_NAMES.map(x=>`<option ${x===initialSubject?'selected':''}>${esc(x)}</option>`).join('')}</select></div><div class="field"><label for="assignMode">Activity</label><select id="assignMode"><option value="module" ${a?.mode==='module'?'selected':''}>Learning module</option><option value="lesson" ${(!a||a?.mode==='lesson')?'selected':''}>Guided lesson</option><option value="quiz" ${a?.mode==='quiz'?'selected':''}>Quiz / test</option></select></div></div><div class="field"><label for="assignUnit">Topic</label><select id="assignUnit">${units.map(u=>`<option value="${esc(u.id)}" ${u.id===a?.unit_id?'selected':''}>${esc(u.title)}</option>`).join('')}</select></div><div class="field"><label for="assignTitle">What should today’s task be called?</label><input id="assignTitle" maxlength="100" value="${esc(a?.title||'Today’s learning task')}" placeholder="Today’s learning task"></div><div class="field"><label for="assignNote">Message shown before Start</label><textarea id="assignNote" rows="4" maxlength="600" placeholder="Tell them what they’ll be doing today in one or two friendly sentences.">${esc(a?.note||'')}</textarea><small>This is the main note the child sees when they open the app.</small></div><button class="primary-button wide" type="submit">${a?'Update today’s task':'Send today’s task'} →</button></form></section><section class="admin-card parent-preview-card"><span class="eyebrow">CHILD VIEW PREVIEW</span><div class="preview-phone"><div class="preview-buddy"><img src="${currentBuddy().img}" alt=""><div><small>WELCOME BACK</small><strong>Hi, ${esc(state.learner.name||'Learner')}.</strong></div></div><div class="preview-task"><b id="previewTitle">${esc(a?.title||'Today’s learning task')}</b><p id="previewNote">${esc(a?.note||'Choose a topic and this note will be filled in for you.')}</p><button>Start →</button></div></div></section></div>`;
+  }
+  function wireParentToday(){
+    const subject=document.getElementById('assignSubject'),unit=document.getElementById('assignUnit'),title=document.getElementById('assignTitle'),note=document.getElementById('assignNote'),mode=document.getElementById('assignMode');
+    let noteTouched=!!note.value.trim();
+    const selectedUnit=()=>getSubjectConfig(subject.value).units.find(x=>x.id===unit.value);
+    const suggestedNote=()=>{const u=selectedUnit();if(!u)return '';const m=mode.value==='quiz'?'You’ll answer a short quiz to show what you know.':mode.value==='module'?'You’ll learn the key idea, try examples and finish with a quick check.':'You’ll work through a guided lesson, practise it and finish with a quick knowledge check.';return `Today you’re working on ${u.title} in ${subject.value}. ${m}`;};
+    const updatePreview=()=>{const u=selectedUnit();document.getElementById('previewTitle').textContent=title.value.trim()||u?.title||'Today’s learning task';document.getElementById('previewNote').textContent=note.value.trim()||suggestedNote();};
+    const repopulate=()=>{const cfg=getSubjectConfig(subject.value);unit.innerHTML=cfg.units.map(u=>`<option value="${esc(u.id)}">${esc(u.title)}</option>`).join('');if(!noteTouched)note.value=suggestedNote();updatePreview();};
+    subject.onchange=repopulate;unit.onchange=()=>{if(!noteTouched)note.value=suggestedNote();updatePreview();};mode.onchange=()=>{if(!noteTouched)note.value=suggestedNote();updatePreview();};title.oninput=updatePreview;note.oninput=()=>{noteTouched=true;updatePreview();};
+    if(!noteTouched){note.value=suggestedNote();updatePreview();}
+    document.getElementById('assignTodayForm').onsubmit=async e=>{e.preventDefault();const cfg=getSubjectConfig(subject.value),u=cfg.units.find(x=>x.id===unit.value);if(!u)return toast('Choose a topic.');const finalNote=note.value.trim()||suggestedNote();try{await cloudRpc('lb_parent_assign',{p_parent_token:state.device.parentToken,p_assigned_for:localDateKey(),p_subject:subject.value,p_unit_id:u.id,p_unit_title:u.title,p_mode:mode.value,p_title:title.value.trim()||u.title,p_note:finalNote});await refreshParentRemote(true);toast('Today’s task is ready on the learner device.');renderParentDashboard('today');}catch(err){toast(err.message||'Could not send the task.');}};
   }
   function parentOverviewHTML(){
-    const answers=totalAnswers(),accuracy=answers?pct(totalCorrect(),answers):0; const week=weekData(); const max=Math.max(1,...week.map(d=>d.minutes));
-    const bars=week.map(d=>`<div class="day-col"><div class="day-bar"><i style="height:${Math.max(3,Math.round(d.minutes/max*100))}%"></i></div><small>${d.label}<br>${d.minutes}m</small></div>`).join('');
+    const answers=totalAnswers(),accuracy=answers?pct(totalCorrect(),answers):0,assignments=parentSnapshot?.assignments||[],done=assignments.filter(a=>a.status==='complete').length,recent=assignments.slice(0,8).map(a=>`<div class="recent-item"><div><strong>${esc(a.title||a.unit_title)}</strong><small>${esc(a.assigned_for)} · ${esc(a.subject)} · ${esc(modeLabel(a.mode))}</small></div><span class="score-chip">${a.status==='complete'?(a.result?.total?Math.round(a.result.correct/a.result.total*100)+'%':'Done'):a.status==='in_progress'?'Started':'Set'}</span></div>`).join('')||'<p class="muted">No assigned tasks yet.</p>';
     const subjectRows=SUBJECT_NAMES.map(s=>{const st=subjectStats(s),c=getSubjectConfig(s),p=subjectProgress(s);return `<div class="admin-subject-row"><div><strong>${esc(s)}</strong><br><small>${st.total?pct(st.correct,st.total)+'% accuracy · '+st.total+' checks':'No checks yet'}</small><div class="bar"><i style="width:${p}%;background:${c.accent}"></i></div></div><b>${p}%</b></div>`}).join('');
-    const weak=weakestStrands().slice(0,5); const weakHTML=weak.length?weak.map(x=>`<div class="weak-item"><strong>${esc(x.strand)}</strong><br><small>${esc(x.subject)} · ${x.accuracy}% across ${x.total} checks</small></div>`).join(''):'<p class="muted">There is not enough attempt data yet to identify a reliable weak area.</p>';
-    return `<section class="admin-stats"><div class="admin-stat"><span>Sessions</span><strong>${allSessions()}</strong></div><div class="admin-stat"><span>Knowledge checks</span><strong>${answers.toLocaleString()}</strong></div><div class="admin-stat"><span>Overall accuracy</span><strong>${answers?accuracy+'%':'—'}</strong></div><div class="admin-stat"><span>Study time</span><strong>${totalMinutes()}m</strong></div></section><section class="dashboard-grid"><div class="admin-card"><h3>Last 7 days</h3><div class="week-chart">${bars}</div></div><div class="admin-card"><h3>Suggested next focus</h3><div class="weak-list">${weakHTML}</div></div></section><section class="dashboard-grid"><div class="admin-card"><h3>Subject progress</h3>${subjectRows}</div><div class="admin-card"><h3>How to read this</h3><p class="muted">Accuracy is one signal, not the whole picture. The dashboard also records completed modules, lessons, quizzes, study days and repeated weak strands. A short re-teaching lesson is usually a better response to a weak strand than simply giving a longer test.</p><p class="muted"><b>Current weekly goal:</b> ${state.parent.weeklyGoal} learning days.</p></div></section>`;
-  }
-  function weekData(){
-    const out=[]; for(let i=6;i>=0;i--){const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-i);const key=todayKey(d);const seconds=state.progress.history.filter(h=>todayKey(new Date(h.date))===key).reduce((n,h)=>n+(h.durationSec||0),0);out.push({key,label:d.toLocaleDateString(undefined,{weekday:'short'}),minutes:Math.round(seconds/60)});} return out;
-  }
-  function weakestStrands(){
-    const arr=[]; for(const [key,s] of Object.entries(state.progress.strand)){if((s.total||0)<3)continue; const split=key.indexOf('::'),subject=key.slice(0,split),strand=key.slice(split+2);arr.push({subject,strand,total:s.total,accuracy:pct(s.correct,s.total)});} return arr.sort((a,b)=>a.accuracy-b.accuracy||b.total-a.total);
+    return `<section class="admin-stats"><div class="admin-stat"><span>Assigned tasks</span><strong>${assignments.length}</strong></div><div class="admin-stat"><span>Completed</span><strong>${done}</strong></div><div class="admin-stat"><span>Knowledge checks</span><strong>${answers}</strong></div><div class="admin-stat"><span>Overall accuracy</span><strong>${answers?accuracy+'%':'—'}</strong></div></section><section class="dashboard-grid"><div class="admin-card"><h3>Subject progress</h3>${subjectRows}</div><div class="admin-card"><h3>Recent assigned work</h3><div class="recent-list">${recent}</div></div></section>`;
   }
   function parentCurriculumHTML(){
-    const blocks=SUBJECT_NAMES.map(s=>{const cfg=getSubjectConfig(s);return `<details class="curriculum-subject"><summary>${esc(s)} — ${cfg.units.length} units</summary><div class="curriculum-units"><p class="muted" style="font-size:12px">${esc(cfg.standardsNote)}</p>${cfg.units.map(u=>{const p=unitProgress(s,u.id),count=(p.module||0)+(p.lesson||0)+(p.quiz||0);return `<div class="curriculum-unit"><span><b>${esc(u.title)}</b><br><small class="muted">${esc(u.standards)}</small></span><span>${count?count+' completed':'Not started'}</span></div>`}).join('')}</div></details>`}).join('');
-    return `<div class="admin-card"><h3>Grade 5 learning map</h3><p class="muted">Core subjects follow Indiana Grade 5 standards and the supplied ILEARN-style math focus. Health and Creative Arts are additional home-learning enrichment. Learning modules and lessons use short knowledge checks with hints; quizzes do not show hints.</p><div class="curriculum-table">${blocks}</div></div>`;
-  }
-  function parentResourcesHTML(){
-    return `<div class="admin-card"><h3>Teaching-resource foundation</h3><p class="muted">The app’s lessons and questions are original. These public educator resources were used to structure standards coverage and lesson approaches; the app does not copy their lesson text.</p><div class="resource-list">${RESOURCES.map(r=>`<div class="resource-item"><strong>${esc(r.title)}</strong><p>${esc(r.subject)} — ${esc(r.note)}</p><a href="${esc(r.url)}" target="_blank" rel="noopener">Open source resource ↗</a></div>`).join('')}</div></div>`;
+    const blocks=SUBJECT_NAMES.map(s=>{const cfg=getSubjectConfig(s);return `<details class="curriculum-subject"><summary>${esc(s)} — ${cfg.units.length} units</summary><div class="curriculum-units"><p class="muted" style="font-size:12px">${esc(cfg.standardsNote)}</p>${cfg.units.map(u=>`<div class="curriculum-unit"><span><b>${esc(u.title)}</b><br><small class="muted">${esc(u.summary)}</small></span><button class="tiny-assign" data-quick-subject="${esc(s)}" data-quick-unit="${esc(u.id)}">Set for today</button></div>`).join('')}</div></details>`}).join('');
+    setTimeout(()=>document.querySelectorAll('[data-quick-subject]').forEach(b=>b.onclick=()=>{renderParentDashboard('today');setTimeout(()=>{const sel=document.getElementById('assignSubject');if(!sel)return;sel.value=b.dataset.quickSubject;sel.dispatchEvent(new Event('change'));document.getElementById('assignUnit').value=b.dataset.quickUnit;},0);}),0);
+    return `<div class="admin-card"><h3>Grade 5 learning map</h3><p class="muted">Browse the curriculum here, then set a unit directly as today’s task.</p><div class="curriculum-table">${blocks}</div></div>`;
   }
   function parentSettingsHTML(){
-    return `<div class="admin-card"><h3>Learner & home-learning settings</h3><form id="parentSettingsForm" class="form-grid"><div class="field"><label>Learning buddy</label>${buddyChoices(currentBuddy().id,'adminBuddy')}<small>The learner can also change buddy from the home screen.</small></div><div class="settings-grid"><div class="field"><label for="adminName">Learner name</label><input id="adminName" maxlength="24" value="${esc(state.learner.name)}"></div><div class="field"><label for="weeklyGoal">Weekly learning-day goal</label><select id="weeklyGoal">${[3,4,5,6,7].map(n=>`<option value="${n}" ${n===Number(state.parent.weeklyGoal)?'selected':''}>${n} days</option>`).join('')}</select></div><div class="field"><label for="sessionLength">Typical lesson length</label><select id="sessionLength">${[10,15,20,25,30].map(n=>`<option value="${n}" ${n===Number(state.parent.sessionLength)?'selected':''}>${n} minutes</option>`).join('')}</select></div><div class="field"><label for="newLearnerPin">New learner PIN</label><input id="newLearnerPin" inputmode="numeric" maxlength="6" placeholder="Leave blank to keep current"><small>Use 0000 to remove the learner PIN.</small></div></div><label class="toggle-line"><span><b>Read-aloud buttons</b><br><small class="muted">Show device voice controls during learning.</small></span><input id="speechSetting" type="checkbox" ${state.settings.speech?'checked':''}></label><label class="toggle-line"><span><b>Hints during learning checks</b><br><small class="muted">Hints are never shown in quiz/test mode.</small></span><input id="hintSetting" type="checkbox" ${state.settings.hints?'checked':''}></label><button class="primary-button" type="submit">Save settings</button></form><hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h3>Change parent PIN</h3><form id="parentPinChange" class="form-grid"><div class="pin-row"><div class="field"><label for="newParentPin">New parent PIN</label><input id="newParentPin" inputmode="numeric" maxlength="6" placeholder="4–6 digits" required></div><div class="field"><label for="confirmParentPin">Confirm PIN</label><input id="confirmParentPin" inputmode="numeric" maxlength="6" placeholder="Repeat" required></div></div><button class="secondary-button" type="submit">Change parent PIN</button></form></div>`;
+    return `<div class="admin-card"><h3>Learner profile</h3><form id="parentSettingsForm" class="form-grid"><div class="field"><label>Learning buddy</label>${buddyChoices(currentBuddy().id,'adminBuddy')}</div><div class="field"><label for="adminName">Learner name</label><input id="adminName" maxlength="24" value="${esc(state.learner.name)}"></div><label class="toggle-line"><span><b>Read-aloud buttons</b><br><small class="muted">Useful inside guided learning.</small></span><input id="speechSetting" type="checkbox" ${state.settings.speech?'checked':''}></label><label class="toggle-line"><span><b>Hints in learning activities</b><br><small class="muted">Quiz/test mode still hides hints.</small></span><input id="hintSetting" type="checkbox" ${state.settings.hints?'checked':''}></label><button class="primary-button" type="submit">Save learner profile</button></form><hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h3>Parent device PIN</h3><form id="parentPinChange" class="form-grid"><div class="pin-row"><div class="field"><label for="newParentPin">New PIN</label><input id="newParentPin" inputmode="numeric" maxlength="6" required></div><div class="field"><label for="confirmParentPin">Confirm PIN</label><input id="confirmParentPin" inputmode="numeric" maxlength="6" required></div></div><button class="secondary-button" type="submit">Change PIN</button></form></div>`;
   }
   function wireParentSettings(){
     document.querySelectorAll('input[name="adminBuddy"]').forEach(r=>r.addEventListener('change',()=>document.querySelectorAll('#parentSettingsForm .buddy-option').forEach(o=>o.classList.toggle('selected',o.querySelector('input').checked))));
-    document.getElementById('parentSettingsForm').onsubmit=async e=>{e.preventDefault();const name=document.getElementById('adminName').value.trim();if(!name)return toast('Learner name cannot be blank.');state.learner.name=name;state.learner.buddy=document.querySelector('input[name="adminBuddy"]:checked')?.value||state.learner.buddy||'alex';state.parent.weeklyGoal=Number(document.getElementById('weeklyGoal').value);state.parent.sessionLength=Number(document.getElementById('sessionLength').value);state.settings.speech=document.getElementById('speechSetting').checked;state.settings.hints=document.getElementById('hintSetting').checked;const lp=document.getElementById('newLearnerPin').value.trim();if(lp){if(lp==='0000')state.learner.pinHash='';else if(/^\d{4,6}$/.test(lp))state.learner.pinHash=await pinHash(lp);else return toast('Learner PIN must be 4–6 digits.');}saveState();toast('Settings saved.');renderParentDashboard('settings');if(learnerUnlocked)renderHome();};
-    document.getElementById('parentPinChange').onsubmit=async e=>{e.preventDefault();const a=document.getElementById('newParentPin').value,b=document.getElementById('confirmParentPin').value;if(!/^\d{4,6}$/.test(a))return toast('Parent PIN must be 4–6 digits.');if(a!==b)return toast('The parent PINs do not match.');state.parent.pinHash=await pinHash(a);saveState();toast('Parent PIN changed.');document.getElementById('parentPinChange').reset();};
+    document.getElementById('parentSettingsForm').onsubmit=async e=>{e.preventDefault();const name=document.getElementById('adminName').value.trim(),buddy=document.querySelector('input[name="adminBuddy"]:checked')?.value||state.learner.buddy;if(!name)return toast('Learner name cannot be blank.');try{await cloudRpc('lb_parent_update_profile',{p_parent_token:state.device.parentToken,p_learner_name:name,p_buddy_id:buddy});state.learner.name=name;state.learner.buddy=buddy;state.settings.speech=document.getElementById('speechSetting').checked;state.settings.hints=document.getElementById('hintSetting').checked;saveState();await refreshParentRemote(true);toast('Learner profile updated.');renderParentDashboard('settings');}catch(err){toast(err.message||'Could not save the profile.');}};
+    document.getElementById('parentPinChange').onsubmit=async e=>{e.preventDefault();const a=document.getElementById('newParentPin').value,b=document.getElementById('confirmParentPin').value;if(!/^\d{4,6}$/.test(a))return toast('Parent PIN must be 4–6 digits.');if(a!==b)return toast('The PINs do not match.');state.parent.pinHash=await pinHash(a);saveState();toast('Parent PIN changed.');e.target.reset();};
   }
-  function parentDataHTML(){ return `<div class="admin-card"><h3>Progress data</h3><p class="muted">This flat PWA is local-first: the learner profile and progress stay in this browser/device. Export a backup before clearing browser data or moving devices. A cloud-sync backend can be added later if required.</p><div class="data-actions"><button id="exportJson" class="primary-button">Export full backup</button><button id="exportCsv" class="secondary-button">Export session CSV</button><label class="secondary-button" style="display:inline-flex;align-items:center;cursor:pointer">Import backup<input id="importJson" type="file" accept="application/json" hidden></label><button id="resetData" class="danger-button">Reset progress</button></div><div class="big-idea" style="margin-top:20px"><strong>Privacy note</strong>No account data is sent to a server in this build. The PIN prevents casual access inside the app but is not a substitute for device security.</div></div>`; }
-  function wireParentData(){
-    document.getElementById('exportJson').onclick=()=>downloadBlob(JSON.stringify(state,null,2),'learning-buddy-backup.json','application/json');
-    document.getElementById('exportCsv').onclick=()=>{const rows=[['Date','Subject','Unit','Activity','Correct','Total','Minutes'],...state.progress.history.map(h=>[h.date,h.subject,h.unitTitle,modeLabel(h.mode),h.correct,h.total,Math.round((h.durationSec||0)/60)])];const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');downloadBlob(csv,'learning-buddy-sessions.csv','text/csv');};
-    document.getElementById('importJson').onchange=e=>{const f=e.target.files?.[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{try{const incoming=JSON.parse(reader.result);if(!incoming.setup||!incoming.learner||!incoming.progress)throw new Error('Invalid');if(confirm('Replace the current local profile and progress with this backup?')){localStorage.setItem(KEY,JSON.stringify(incoming));state=loadState();toast('Backup imported.');renderParentDashboard('overview');}}catch(err){toast('That file is not a valid Learning Buddy backup.');}};reader.readAsText(f);};
-    document.getElementById('resetData').onclick=()=>{if(confirm('Reset learning progress but keep the learner and parent setup?')){state.progress=defaultState().progress;saveState();toast('Progress reset.');renderParentDashboard('overview');if(learnerUnlocked)renderHome();}};
+  function parentConnectionHTML(){
+    const linked=!!parentSnapshot?.child_linked,code=state.device.familyCode||parentSnapshot?.family_code||'—',link=state.device.linkCode||'';
+    return `<div class="dashboard-grid"><section class="admin-card"><h3>Connected family</h3><div class="connection-line"><span class="status-dot ${cloudReady()?'online':''}"></span><div><strong>${cloudReady()?'Cloud connected':'Cloud setup needed'}</strong><small>${esc(cloudStatusText())}</small></div></div><div class="family-code"><small>FAMILY CODE</small><strong>${esc(code)}</strong></div><p class="muted">The family code identifies this learner. A temporary link code connects a new learner device and expires after 24 hours.</p><button id="newLinkCode" class="primary-button">Generate learner link code</button>${link?`<div class="link-code-result"><small>NEW LINK CODE</small><strong>${esc(link)}</strong><span>Use with family code ${esc(code)}</span></div>`:''}</section><section class="admin-card"><h3>Learner device</h3><div class="assignment-status ${linked?'complete':'empty'}"><span>${linked?'✓':'○'}</span><div><strong>${linked?'Learner device connected':'Not linked yet'}</strong><small>${linked?'Tasks and results can sync across devices.':'Generate a link code, then enter both codes on the child device.'}</small></div></div><button id="resetParentDevice" class="danger-button">Disconnect this parent device</button></section></div>`;
+  }
+  function wireParentConnection(){
+    document.getElementById('newLinkCode').onclick=async()=>{try{const data=await cloudRpc('lb_parent_regenerate_link',{p_parent_token:state.device.parentToken});state.device.linkCode=data.child_link_code;state.device.familyCode=data.family_code;saveState();toast('New learner link code created.');renderParentDashboard('connection');}catch(err){toast(err.message||'Could not create a link code.');}};
+    document.getElementById('resetParentDevice').onclick=()=>{if(confirm('Disconnect this parent phone from the family? This does not delete the cloud learner or their progress.')){state.device.parentToken='';state.device.role='';state.device.linkCode='';saveState();closeParent();}};
   }
   function downloadBlob(text,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),500);}
 
@@ -439,6 +502,14 @@
   window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;document.getElementById('installBtn').classList.remove('hidden');});
   document.getElementById('installBtn').onclick=async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;document.getElementById('installBtn').classList.add('hidden');};
   if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  const syncWhenVisible=()=>{
+    if(document.hidden)return;
+    if(state.device.role==='child'&&state.device.childToken&&learnerUnlocked)syncChild(true).then(()=>{if(currentView==='home')renderHome();});
+    if(state.device.role==='parent'&&state.device.parentToken&&parentUnlocked)refreshParentRemote(true).then(()=>{if(!els.parent.classList.contains('hidden')){const tab=els.parentDash.querySelector('.parent-tab.active')?.dataset.tab||'today';renderParentDashboard(tab);}});
+  };
+  window.addEventListener('online',syncWhenVisible);
+  window.addEventListener('focus',syncWhenVisible);
+  document.addEventListener('visibilitychange',syncWhenVisible);
 
   renderAuth();
 })();

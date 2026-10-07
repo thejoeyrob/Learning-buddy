@@ -1,5 +1,5 @@
-const CACHE='learning-buddy-grade5-v6-flat';
-const ASSETS=['./','./index.html','./styles.css','./app.js','./curriculum.js','./question-bank.js','./extras.js','./math-extras.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./buddy-alex.jpg','./buddy-mia.jpg','./buddy-leo.jpg','./buddy-maya.jpg','./buddy-noah.jpg','./buddy-zara.jpg','./math.jpg','./ela.jpg','./science.jpg','./social.jpg','./cs.jpg','./health.jpg','./arts.jpg'];
+const CACHE='learning-buddy-grade5-v8-parent-child-flat';
+const ASSETS=['./','./index.html','./styles.css','./app.js','./cloud-config.js','./curriculum.js','./question-bank.js','./extras.js','./math-extras.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./buddy-alex.jpg','./buddy-mia.jpg','./buddy-leo.jpg','./buddy-maya.jpg','./buddy-noah.jpg','./buddy-zara.jpg','./math.jpg','./ela.jpg','./science.jpg','./social.jpg','./cs.jpg','./health.jpg','./arts.jpg'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return res;}).catch(()=>caches.match('./index.html'))));});
