@@ -1,0 +1,15 @@
+{
+  "name":"Nova Math Studio — Grade 5 Home Learning",
+  "short_name":"Nova Math",
+  "description":"A single-player Grade 5 home-learning math studio aligned to the supplied curriculum.",
+  "start_url":"./index.html",
+  "scope":"./",
+  "display":"standalone",
+  "background_color":"#f7f2e9",
+  "theme_color":"#10243e",
+  "orientation":"any",
+  "icons":[
+    {"src":"icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"icon-512.png","sizes":"512x512","type":"image/png"}
+  ]
+}

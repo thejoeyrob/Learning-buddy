@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 520" role="img" aria-labelledby="t d">
+<title id="t">Ms. Nova</title><desc id="d">A friendly original cartoon math teacher with glasses, teal cardigan and a tablet.</desc>
+<defs><filter id="s" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#10243e" flood-opacity=".18"/></filter></defs>
+<g filter="url(#s)">
+<path d="M113 447c16-92 48-139 97-139 51 0 85 47 99 139z" fill="#8ad8c5" stroke="#10243e" stroke-width="8" stroke-linejoin="round"/>
+<path d="M166 337c10 24 25 36 45 36 20 0 35-12 44-36l-15-60h-60z" fill="#e7a477" stroke="#10243e" stroke-width="7"/>
+<ellipse cx="210" cy="208" rx="92" ry="111" fill="#efb184" stroke="#10243e" stroke-width="8"/>
+<path d="M126 205c-4-69 30-120 87-120 63 0 102 48 93 124-14-10-25-27-32-47-38 30-86 34-148 11z" fill="#2f2630" stroke="#10243e" stroke-width="8" stroke-linejoin="round"/>
+<path d="M122 195c-19 12-19 58 9 65" fill="none" stroke="#10243e" stroke-width="8" stroke-linecap="round"/><path d="M302 195c19 12 19 58-9 65" fill="none" stroke="#10243e" stroke-width="8" stroke-linecap="round"/>
+<g fill="none" stroke="#10243e" stroke-width="7"><rect x="146" y="190" width="52" height="38" rx="15"/><rect x="222" y="190" width="52" height="38" rx="15"/><path d="M198 206h24"/></g>
+<circle cx="173" cy="208" r="5" fill="#10243e"/><circle cx="247" cy="208" r="5" fill="#10243e"/><path d="M205 217c-5 16-6 27 7 30" fill="none" stroke="#a56548" stroke-width="4" stroke-linecap="round"/><path d="M177 263c22 20 45 20 67 0" fill="none" stroke="#8b4c4d" stroke-width="6" stroke-linecap="round"/>
+<path d="M126 447c-2-42 3-73 18-96l44 30 22-16 21 16 46-30c14 22 20 55 17 96z" fill="#6cc5b0"/>
+<path d="M188 380l22 18 21-18 25 67h-91z" fill="#fffdf8" stroke="#10243e" stroke-width="6" stroke-linejoin="round"/>
+<path d="M132 366c-35 15-64 44-80 79l42 18c18-31 37-49 58-56M289 364c37 14 65 43 79 79l-42 18c-18-31-37-49-58-56" fill="#8ad8c5" stroke="#10243e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="55" y="400" width="111" height="73" rx="12" transform="rotate(-8 55 400)" fill="#173658" stroke="#10243e" stroke-width="7"/><circle cx="105" cy="431" r="18" fill="#f3c55c"/><path d="M105 419v24M93 431h24" stroke="#10243e" stroke-width="5" stroke-linecap="round"/>
+<path d="M329 449c14-6 20-1 26 10M68 453c-13-7-20-3-27 8" fill="none" stroke="#efb184" stroke-width="18" stroke-linecap="round"/>
+<circle cx="285" cy="347" r="20" fill="#f3c55c" stroke="#10243e" stroke-width="6"/><path d="M285 336l3 8 8 1-6 6 2 8-7-4-8 4 2-8-6-6 9-1z" fill="#10243e"/>
+</g></svg>
