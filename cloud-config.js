@@ -1,7 +1,6 @@
-// Learning Buddy cloud connection.
-// For a live parent↔child connection, set these two public Supabase values.
-// They can also be entered from the Parent device setup screen and are stored on that device.
+// Learning Buddy production cloud connection.
+// This is a Supabase public/publishable browser key, not a secret/service-role key.
 window.LB_CLOUD_CONFIG = {
-  url: '',
-  key: ''
+  url: 'https://dwgpwgkkrndxqqvrhnyy.supabase.co',
+  key: 'sb_publishable_JgfIa9wQciD2T_cVcJixOA_KLdsON1Y'
 };

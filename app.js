@@ -5,8 +5,8 @@
   const SUBJECTS = window.LB_SUBJECTS || {};
   const RESOURCES = window.LB_RESOURCES || [];
   const SCHOOL_FOCUS = window.LB_SCHOOL_FOCUS || null;
-  const KEY = 'learning-buddy-grade5-v8';
-  const PREVIOUS_KEYS = ['learning-buddy-grade5-v7','learning-buddy-grade5-v4','nova-learning-grade5-v3'];
+  const KEY = 'learning-buddy-grade5-v9';
+  const PREVIOUS_KEYS = ['learning-buddy-grade5-v8','learning-buddy-grade5-v7','learning-buddy-grade5-v4','nova-learning-grade5-v3'];
   const SUBJECT_NAMES = Object.keys(SUBJECTS);
   const BUDDIES = [
     {id:'alex',name:'Alex',img:'buddy-alex.jpg',line:'We’ll figure it out together.',vibe:'Puzzle pro'},
@@ -42,6 +42,8 @@
   });
 
   let state = loadState();
+  const incomingLearnerInvite = learnerInviteFromUrl();
+  if(incomingLearnerInvite && !state.device.parentToken && !state.device.childToken){ state.device.role='child'; saveState(); }
   let learnerUnlocked = false;
   let parentUnlocked = false;
   let currentView = 'home';
@@ -112,6 +114,36 @@
   }
   function toast(msg){ clearTimeout(toastTimer); els.toast.textContent=msg; els.toast.classList.remove('hidden'); toastTimer=setTimeout(()=>els.toast.classList.add('hidden'),1800); }
   function localDateKey(d=new Date()){ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
+  function learnerInviteFromUrl(){
+    try{
+      const q=new URLSearchParams(location.search);
+      const family=String(q.get('family')||'').trim().toUpperCase();
+      const link=String(q.get('link')||'').trim().toUpperCase();
+      const role=String(q.get('lbrole')||'').trim().toLowerCase();
+      if((role==='child'||(family&&link)) && family && link) return {family,link};
+    }catch(e){}
+    return null;
+  }
+  function learnerInviteUrl(){
+    const family=String(state.device.familyCode||parentSnapshot?.family_code||'').trim().toUpperCase();
+    const link=String(state.device.linkCode||'').trim().toUpperCase();
+    if(!family||!link) return '';
+    try{
+      const u=new URL(location.href);
+      u.search=''; u.hash='';
+      u.searchParams.set('lbrole','child');
+      u.searchParams.set('family',family);
+      u.searchParams.set('link',link);
+      return u.toString();
+    }catch(e){ return ''; }
+  }
+  function clearLearnerInviteFromUrl(){
+    try{
+      const u=new URL(location.href);
+      ['lbrole','family','link'].forEach(k=>u.searchParams.delete(k));
+      history.replaceState({},'',u.pathname+(u.search||'')+(u.hash||''));
+    }catch(e){}
+  }
   function cloudConfig(){
     let local={}; try{ local=JSON.parse(localStorage.getItem('learning-buddy-cloud-config')||'{}'); }catch(e){}
     const base=window.LB_CLOUD_CONFIG||{};
@@ -219,9 +251,13 @@
   }
   function renderChildDeviceAuth(){
     if(state.device.childToken){ setTimeout(()=>enterChildApp(),0); return; }
-    els.auth.innerHTML=`<div class="auth-card child-link-card"><div class="auth-copy"><span class="kicker">LEARNER DEVICE</span><h1>Connect to your grown-up.</h1><p>This is a one-time link. After that, Learning Buddy opens straight onto today’s work.</p><form id="childLinkForm" class="form-grid">${cloudSetupFields()}<div class="pin-row"><div class="field"><label for="familyCode">Family code</label><input id="familyCode" maxlength="8" autocapitalize="characters" placeholder="8 characters" required></div><div class="field"><label for="linkCode">Link code</label><input id="linkCode" maxlength="6" autocapitalize="characters" placeholder="6 characters" required></div></div><button class="primary-button wide" type="submit">Connect this learner device →</button><button id="switchDeviceRole" class="link-button" type="button">This should be a parent device</button></form></div><div class="auth-art"><img src="${currentBuddy().img}" alt=""><div class="art-label"><strong>Then it stays simple.</strong><p>Welcome → today’s task → Start.</p></div></div></div>`;
+    const invite=learnerInviteFromUrl();
+    const familyValue=invite?.family||state.device.familyCode||'';
+    const linkValue=invite?.link||'';
+    const inviteNotice=invite?`<div class="migration-note invite-ready"><b>✓ Parent invitation ready</b><br>The family and link codes are already filled in. Tap Connect once.</div>`:'';
+    els.auth.innerHTML=`<div class="auth-card child-link-card"><div class="auth-copy"><span class="kicker">LEARNER DEVICE</span><h1>${invite?'Your Learning Buddy is ready.':'Connect to your grown-up.'}</h1><p>${invite?'Your parent has sent the setup link. Connect this device once, then it will open straight to today’s learning.':'This is a one-time link. After that, Learning Buddy opens straight onto today’s work.'}</p>${inviteNotice}<form id="childLinkForm" class="form-grid">${cloudSetupFields()}<div class="pin-row"><div class="field"><label for="familyCode">Family code</label><input id="familyCode" maxlength="8" autocapitalize="characters" value="${esc(familyValue)}" placeholder="8 characters" required></div><div class="field"><label for="linkCode">Link code</label><input id="linkCode" maxlength="6" autocapitalize="characters" value="${esc(linkValue)}" placeholder="6 characters" required></div></div><button class="primary-button wide" type="submit">${invite?'Connect Learning Buddy':'Connect this learner device'} →</button><button id="switchDeviceRole" class="link-button" type="button">This should be a parent device</button></form></div><div class="auth-art"><img src="${currentBuddy().img}" alt=""><div class="art-label"><strong>Then it stays simple.</strong><p>Welcome → today’s task → Start.</p></div></div></div>`;
     document.getElementById('switchDeviceRole').onclick=()=>{state.device.role='parent';saveState();renderAuth();};
-    document.getElementById('childLinkForm').onsubmit=async e=>{e.preventDefault();const url=document.getElementById('cloudUrl')?.value.trim(),key=document.getElementById('cloudKey')?.value.trim();if(url||key)saveCloudConfig(url,key);if(!cloudReady())return toast('Add the Supabase project URL and publishable key first.');const family=document.getElementById('familyCode').value.trim().toUpperCase(),link=document.getElementById('linkCode').value.trim().toUpperCase();try{const data=await cloudRpc('lb_child_claim',{p_family_code:family,p_link_code:link});state.setup=true;state.device.childToken=data.child_token;state.device.familyCode=data.family_code;state.device.linked=true;state.learner.name=data.learner_name||state.learner.name;state.learner.buddy=data.buddy_id||state.learner.buddy;if(data.progress_snapshot&&Object.keys(data.progress_snapshot).length)state.progress={...defaultState().progress,...data.progress_snapshot};saveState();await enterChildApp();}catch(err){toast(err.message||'That family/link code did not work.');}};
+    document.getElementById('childLinkForm').onsubmit=async e=>{e.preventDefault();const url=document.getElementById('cloudUrl')?.value.trim(),key=document.getElementById('cloudKey')?.value.trim();if(url||key)saveCloudConfig(url,key);if(!cloudReady())return toast('Cloud connection is not ready.');const family=document.getElementById('familyCode').value.trim().toUpperCase(),link=document.getElementById('linkCode').value.trim().toUpperCase();try{const data=await cloudRpc('lb_child_claim',{p_family_code:family,p_link_code:link});state.setup=true;state.device.childToken=data.child_token;state.device.familyCode=data.family_code;state.device.linked=true;state.learner.name=data.learner_name||state.learner.name;state.learner.buddy=data.buddy_id||state.learner.buddy;if(data.progress_snapshot&&Object.keys(data.progress_snapshot).length)state.progress={...defaultState().progress,...data.progress_snapshot};saveState();clearLearnerInviteFromUrl();await enterChildApp();}catch(err){toast(err.message||'That family/link code did not work.');}};
   }
   async function enterChildApp(){ learnerUnlocked=true; parentUnlocked=false; document.body.classList.add('child-focus-mode'); els.auth.classList.add('hidden'); els.shell.classList.remove('hidden'); document.getElementById('parentBtn').classList.add('hidden'); document.getElementById('navLogout').classList.add('hidden'); await syncChild(true); setView('home'); startSyncLoop('child'); }
   async function enterParentApp(refresh=false,tab='today'){ learnerUnlocked=false; parentUnlocked=true; document.body.classList.remove('child-focus-mode'); els.auth.classList.add('hidden');els.shell.classList.add('hidden');els.parent.classList.remove('hidden');els.parentGate.classList.add('hidden');els.parentDash.classList.remove('hidden');if(refresh)await refreshParentRemote(true);renderParentDashboard(tab);startSyncLoop('parent'); }
@@ -483,11 +519,22 @@
     document.getElementById('parentPinChange').onsubmit=async e=>{e.preventDefault();const a=document.getElementById('newParentPin').value,b=document.getElementById('confirmParentPin').value;if(!/^\d{4,6}$/.test(a))return toast('Parent PIN must be 4–6 digits.');if(a!==b)return toast('The PINs do not match.');state.parent.pinHash=await pinHash(a);saveState();toast('Parent PIN changed.');e.target.reset();};
   }
   function parentConnectionHTML(){
-    const linked=!!parentSnapshot?.child_linked,code=state.device.familyCode||parentSnapshot?.family_code||'—',link=state.device.linkCode||'';
-    return `<div class="dashboard-grid"><section class="admin-card"><h3>Connected family</h3><div class="connection-line"><span class="status-dot ${cloudReady()?'online':''}"></span><div><strong>${cloudReady()?'Cloud connected':'Cloud setup needed'}</strong><small>${esc(cloudStatusText())}</small></div></div><div class="family-code"><small>FAMILY CODE</small><strong>${esc(code)}</strong></div><p class="muted">The family code identifies this learner. A temporary link code connects a new learner device and expires after 24 hours.</p><button id="newLinkCode" class="primary-button">Generate learner link code</button>${link?`<div class="link-code-result"><small>NEW LINK CODE</small><strong>${esc(link)}</strong><span>Use with family code ${esc(code)}</span></div>`:''}</section><section class="admin-card"><h3>Learner device</h3><div class="assignment-status ${linked?'complete':'empty'}"><span>${linked?'✓':'○'}</span><div><strong>${linked?'Learner device connected':'Not linked yet'}</strong><small>${linked?'Tasks and results can sync across devices.':'Generate a link code, then enter both codes on the child device.'}</small></div></div><button id="resetParentDevice" class="danger-button">Disconnect this parent device</button></section></div>`;
+    const linked=!!parentSnapshot?.child_linked,code=state.device.familyCode||parentSnapshot?.family_code||'—',link=state.device.linkCode||'',invite=learnerInviteUrl();
+    return `<div class="dashboard-grid"><section class="admin-card"><h3>Connect the learner device</h3><div class="connection-line"><span class="status-dot ${cloudReady()?'online':''}"></span><div><strong>${cloudReady()?'Learning Buddy cloud is connected':'Cloud setup needed'}</strong><small>${esc(cloudStatusText())}</small></div></div><div class="family-code"><small>FAMILY CODE</small><strong>${esc(code)}</strong></div><p class="muted">The easiest setup is to generate a temporary learner link, then send it to the child’s phone or tablet. The link expires after 24 hours and can only be claimed once.</p><button id="newLinkCode" class="primary-button">${linked?'Link a replacement learner device':'Generate learner setup link'}</button>${link?`<div class="link-code-result"><small>LEARNER LINK READY</small><strong>${esc(link)}</strong><span>Family ${esc(code)} · expires after 24 hours</span></div><button id="shareLearnerLink" class="secondary-button wide">Share learner setup link</button><button id="copyLearnerLink" class="link-button wide">Copy setup link</button>`:''}</section><section class="admin-card"><h3>Learner device</h3><div class="assignment-status ${linked?'complete':'empty'}"><span>${linked?'✓':'○'}</span><div><strong>${linked?'Learner device connected':'Not linked yet'}</strong><small>${linked?'Tasks and results sync across devices.':'Send the setup link, open it on the learner device, then tap Connect once.'}</small></div></div>${invite?`<p class="muted">If sharing is unavailable, use family code <b>${esc(code)}</b> and link code <b>${esc(link)}</b>.</p>`:''}<button id="resetParentDevice" class="danger-button">Disconnect this parent device</button></section></div>`;
+  }
+  async function shareLearnerSetupLink(copyOnly=false){
+    const url=learnerInviteUrl(); if(!url) return toast('Generate a learner setup link first.');
+    const text=`Open this Learning Buddy link on the learner device. The setup codes are filled in automatically.`;
+    try{
+      if(!copyOnly && navigator.share){ await navigator.share({title:'Learning Buddy learner setup',text,url}); return; }
+      if(navigator.clipboard?.writeText){ await navigator.clipboard.writeText(url); toast('Learner setup link copied.'); return; }
+    }catch(err){ if(err?.name==='AbortError') return; }
+    window.prompt('Copy this learner setup link:',url);
   }
   function wireParentConnection(){
-    document.getElementById('newLinkCode').onclick=async()=>{try{const data=await cloudRpc('lb_parent_regenerate_link',{p_parent_token:state.device.parentToken});state.device.linkCode=data.child_link_code;state.device.familyCode=data.family_code;saveState();toast('New learner link code created.');renderParentDashboard('connection');}catch(err){toast(err.message||'Could not create a link code.');}};
+    document.getElementById('newLinkCode').onclick=async()=>{try{const data=await cloudRpc('lb_parent_regenerate_link',{p_parent_token:state.device.parentToken});state.device.linkCode=data.child_link_code;state.device.familyCode=data.family_code;saveState();toast('Learner setup link created.');renderParentDashboard('connection');}catch(err){toast(err.message||'Could not create a link code.');}};
+    document.getElementById('shareLearnerLink')?.addEventListener('click',()=>shareLearnerSetupLink(false));
+    document.getElementById('copyLearnerLink')?.addEventListener('click',()=>shareLearnerSetupLink(true));
     document.getElementById('resetParentDevice').onclick=()=>{if(confirm('Disconnect this parent phone from the family? This does not delete the cloud learner or their progress.')){state.device.parentToken='';state.device.role='';state.device.linkCode='';saveState();closeParent();}};
   }
   function downloadBlob(text,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),500);}
