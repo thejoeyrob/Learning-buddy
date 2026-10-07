@@ -1,12 +1,27 @@
 (() => {
   'use strict';
 
-  const BANK = window.NOVA_QUESTION_BANK || [];
-  const SUBJECTS = window.NOVA_SUBJECTS || {};
-  const RESOURCES = window.NOVA_RESOURCES || [];
-  const SCHOOL_FOCUS = window.NOVA_SCHOOL_FOCUS || null;
-  const KEY = 'nova-learning-grade5-v3';
+  const BANK = window.LB_QUESTION_BANK || [];
+  const SUBJECTS = window.LB_SUBJECTS || {};
+  const RESOURCES = window.LB_RESOURCES || [];
+  const SCHOOL_FOCUS = window.LB_SCHOOL_FOCUS || null;
+  const KEY = 'learning-buddy-grade5-v4';
+  const LEGACY_KEY = 'nova-learning-grade5-v3';
   const SUBJECT_NAMES = Object.keys(SUBJECTS);
+  const BUDDIES = [
+    {id:'alex',name:'Alex',img:'buddy-alex.jpg',line:'We’ll figure it out together.',vibe:'Confident problem solver'},
+    {id:'mia',name:'Mia',img:'buddy-mia.jpg',line:'Let’s make this easy to understand.',vibe:'Calm creative thinker'},
+    {id:'leo',name:'Leo',img:'buddy-leo.jpg',line:'Ready for the next challenge?',vibe:'Curious challenge seeker'},
+    {id:'maya',name:'Maya',img:'buddy-maya.jpg',line:'Small steps. Big progress.',vibe:'Positive steady learner'},
+    {id:'noah',name:'Noah',img:'buddy-noah.jpg',line:'I’ll help you spot the pattern.',vibe:'Logical pattern finder'},
+    {id:'zara',name:'Zara',img:'buddy-zara.jpg',line:'Let’s learn it your way.',vibe:'Bright independent explorer'}
+  ];
+  function currentBuddy(){ return BUDDIES.find(b=>b.id===state?.learner?.buddy) || BUDDIES[0]; }
+  function buddyById(id){ return BUDDIES.find(b=>b.id===id) || BUDDIES[0]; }
+  function buddyChoices(selected, name='setupBuddy'){
+    return `<div class="buddy-grid">${BUDDIES.map(b=>`<label class="buddy-option ${b.id===selected?'selected':''}"><input type="radio" name="${name}" value="${b.id}" ${b.id===selected?'checked':''}><span class="buddy-portrait"><img src="${b.img}" alt="${esc(b.name)} learning buddy"></span><strong>${esc(b.name)}</strong><small>${esc(b.vibe)}</small><i>✓</i></label>`).join('')}</div>`;
+  }
+
 
   const els = {
     auth: document.getElementById('authScreen'), shell: document.getElementById('appShell'), home: document.getElementById('homeView'),
@@ -18,7 +33,7 @@
   const defaultState = () => ({
     version: 3,
     setup: false,
-    learner: { name:'', pinHash:'', createdAt:'' },
+    learner: { name:'', pinHash:'', createdAt:'', buddy:'alex' },
     parent: { pinHash:'', weeklyGoal:5, sessionLength:15 },
     settings: { speech:true, hints:true },
     progress: { subject:{}, strand:{}, unit:{}, question:{}, history:[], wrong:[], studyDates:[] }
@@ -36,7 +51,7 @@
 
   function loadState(){
     try{
-      const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
+      const raw = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || 'null');
       if(!raw) return defaultState();
       const d = defaultState();
       return {
@@ -55,7 +70,7 @@
   function dateLabel(iso){ const d=new Date(iso); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
   function modeLabel(mode){ return mode==='module'?'Learning module':mode==='lesson'?'Guided lesson':'Quiz / test'; }
   function modeIcon(mode){ return mode==='module'?'✦':mode==='lesson'?'▣':'✓'; }
-  function getSubjectConfig(name){ return SUBJECTS[name] || {accent:'#6c5ce7',tint:'#f0efff',units:[],desc:'',icon:'assets/math.svg'}; }
+  function getSubjectConfig(name){ return SUBJECTS[name] || {accent:'#6c5ce7',tint:'#f0efff',units:[],desc:'',icon:'math.jpg'}; }
   function unitKey(subject,unitId){ return subject+'::'+unitId; }
   function unitProgress(subject,unitId){ return state.progress.unit[unitKey(subject,unitId)] || {module:0,lesson:0,quiz:0,last:null}; }
   function subjectStats(subject){ return state.progress.subject[subject] || {correct:0,total:0,sessions:0}; }
@@ -99,26 +114,31 @@
     els.shell.classList.add('hidden'); els.auth.classList.remove('hidden');
     if(!state.setup){
       els.auth.innerHTML=`
-      <div class="auth-card">
+      <div class="auth-card setup-card">
         <div class="auth-copy">
-          <span class="kicker">NEW HOME LEARNING SPACE</span>
-          <h1>Meet Ms. Nova.</h1>
-          <p>A simple Grade 5 learning studio built around lessons, small knowledge checks and a parent-only progress dashboard. Start by creating the learner profile.</p>
+          <span class="kicker">WELCOME TO LEARNING BUDDY</span>
+          <h1>Choose your Learning Buddy.</h1>
+          <p>Set up one simple Grade 5 home-learning profile, then pick a buddy around the learner’s age to guide lessons, hints and knowledge checks.</p>
           <form id="setupForm" class="form-grid">
-            <div class="field"><label for="setupName">Learner name</label><input id="setupName" maxlength="24" autocomplete="given-name" placeholder="First name" required><small>This is the name Ms. Nova uses for greetings.</small></div>
+            <div class="field"><label for="setupName">Learner name</label><input id="setupName" maxlength="24" autocomplete="given-name" placeholder="First name" required><small>Learning Buddy uses this name for friendly greetings.</small></div>
+            <div class="field"><label>Pick a learning buddy</label>${buddyChoices('alex','setupBuddy')}<small>The buddy is a guide, not a teacher character. You can change it later.</small></div>
             <div class="pin-row">
               <div class="field"><label for="learnerPin">Learner PIN (optional)</label><input id="learnerPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits"><small>Leave blank for one-tap learner sign in.</small></div>
               <div class="field"><label for="parentPin">Parent PIN</label><input id="parentPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits" required><small>Locks the parent dashboard and settings.</small></div>
             </div>
-            <button class="primary-button wide" type="submit">Create learning profile</button>
+            <button class="primary-button wide" type="submit">Start with my buddy</button>
           </form>
         </div>
-        <div class="auth-art"><img src="assets/ms-nova.png" alt="Ms. Nova, the Nova Learning Studio teacher mascot"><div class="art-label"><strong>Learn it. Try it. Explain it.</strong><p>Every module and lesson includes quick checks so progress comes from understanding, not just tapping through screens.</p></div></div>
+        <div class="auth-art"><img id="authBuddyPreview" src="buddy-alex.jpg" alt="Alex learning buddy"><div class="art-label"><strong id="authBuddyName">Alex is ready.</strong><p>Learn a little, try it, check understanding, get a hint when needed, then keep moving.</p></div></div>
       </div>`;
+      els.auth.querySelectorAll('input[name="setupBuddy"]').forEach(r=>r.addEventListener('change',()=>{
+        els.auth.querySelectorAll('.buddy-option').forEach(o=>o.classList.toggle('selected',o.querySelector('input').checked));
+        const b=buddyById(r.value); document.getElementById('authBuddyPreview').src=b.img; document.getElementById('authBuddyPreview').alt=b.name+' learning buddy'; document.getElementById('authBuddyName').textContent=b.name+' is ready.';
+      }));
       document.getElementById('setupForm').addEventListener('submit',async e=>{
-        e.preventDefault(); const name=document.getElementById('setupName').value.trim(); const lp=document.getElementById('learnerPin').value.trim(); const pp=document.getElementById('parentPin').value.trim();
+        e.preventDefault(); const name=document.getElementById('setupName').value.trim(); const lp=document.getElementById('learnerPin').value.trim(); const pp=document.getElementById('parentPin').value.trim(); const buddy=document.querySelector('input[name="setupBuddy"]:checked')?.value||'alex';
         if(!name) return toast('Enter the learner name.'); if(lp && !/^\d{4,6}$/.test(lp)) return toast('Learner PIN must be 4–6 digits.'); if(!/^\d{4,6}$/.test(pp)) return toast('Parent PIN must be 4–6 digits.');
-        state.setup=true; state.learner.name=name; state.learner.pinHash=lp?await pinHash(lp):''; state.learner.createdAt=new Date().toISOString(); state.parent.pinHash=await pinHash(pp); saveState(); learnerUnlocked=true; enterApp();
+        state.setup=true; state.learner.name=name; state.learner.buddy=buddy; state.learner.pinHash=lp?await pinHash(lp):''; state.learner.createdAt=new Date().toISOString(); state.parent.pinHash=await pinHash(pp); saveState(); learnerUnlocked=true; enterApp();
       });
     } else {
       const needsPin=!!state.learner.pinHash;
@@ -134,14 +154,14 @@
           </form>
           <div class="auth-actions"><button id="authParent" class="secondary-button">Parent access</button><button id="changeProfile" class="link-button">Reset this device profile</button></div>
         </div>
-        <div class="auth-art"><img src="assets/ms-nova.png" alt="Ms. Nova"><div class="art-label"><strong>Ready for another step?</strong><p>Your lessons, checks, quizzes and progress are stored locally on this device.</p></div></div>
+        <div class="auth-art"><img src="${currentBuddy().img}" alt="${esc(currentBuddy().name)} learning buddy"><div class="art-label"><strong>${esc(currentBuddy().name)} is ready.</strong><p>Your lessons, checks, quizzes and progress are stored locally on this device.</p></div></div>
       </div>`;
       document.getElementById('loginForm').addEventListener('submit',async e=>{
         e.preventDefault(); if(needsPin){const entered=document.getElementById('loginPin').value; if(await pinHash(entered)!==state.learner.pinHash) return toast('That learner PIN is not correct.');}
         learnerUnlocked=true; enterApp();
       });
       document.getElementById('authParent').onclick=()=>openParent();
-      document.getElementById('changeProfile').onclick=()=>{ if(confirm('Reset this local learner profile? This erases progress stored on this device.')){localStorage.removeItem(KEY);state=defaultState();renderAuth();} };
+      document.getElementById('changeProfile').onclick=()=>{ if(confirm('Reset this local learner profile? This erases progress stored on this device.')){localStorage.removeItem(KEY);localStorage.removeItem(LEGACY_KEY);state=defaultState();renderAuth();} };
     }
   }
   function enterApp(){ els.auth.classList.add('hidden'); els.shell.classList.remove('hidden'); setView('home'); }
@@ -160,8 +180,8 @@
     const focus=SCHOOL_FOCUS?`<div class="focus-card"><div><span class="kicker" style="color:#facc15">SCHOOL FOCUS</span><h3 style="margin:6px 0 0;font-size:22px">${esc(SCHOOL_FOCUS.title)}</h3><p>${esc(SCHOOL_FOCUS.subtitle)}</p><div class="tags">${SCHOOL_FOCUS.standards.map(s=>`<span class="tag">${esc(s)}</span>`).join('')}</div></div><button id="focusStart" class="primary-button">Start focus quiz</button></div>`:'';
     els.home.innerHTML=`
       <section class="hero">
-        <div class="hero-copy"><span class="kicker">YOUR HOME LEARNING DASHBOARD</span><h1>Hi, ${esc(name)}. What shall we learn today?</h1><p>Choose a subject, then decide whether you want to learn a concept, take a guided lesson, or test what you know.</p><div class="hero-actions"><button id="continueBtn" class="primary-button">Continue learning</button><button id="dailyMixBtn" class="secondary-button">Quick daily mix</button></div></div>
-        <div class="hero-image"><img src="assets/ms-nova.png" alt="Ms. Nova"></div><div class="speech-chip">“I’ll teach a little, check your understanding, and give you a hint whenever you need one.”</div>
+        <div class="hero-copy"><span class="kicker">YOUR HOME LEARNING DASHBOARD</span><h1>Hi, ${esc(name)}. What shall we learn today?</h1><p>Choose a subject, then decide whether you want to learn a concept, take a guided lesson, or test what you know.</p><div class="hero-actions"><button id="continueBtn" class="primary-button">Continue learning</button><button id="dailyMixBtn" class="secondary-button">Quick daily mix</button><button id="changeBuddyBtn" class="soft-button">Change buddy</button></div></div>
+        <div class="hero-image"><img src="${currentBuddy().img}" alt="${esc(currentBuddy().name)} learning buddy"></div><div class="speech-chip"><strong>${esc(currentBuddy().name)}</strong><br>“${esc(currentBuddy().line)}”</div>
       </section>
       <section class="today-strip"><div class="today-card"><div class="today-icon">✦</div><div><small>Today</small><strong>${completedToday?completedToday+' session'+(completedToday===1?'':'s')+' complete':'Ready when you are'}</strong><small>Parent goal: ${state.parent.weeklyGoal} learning days this week</small></div></div><div class="mini-stat"><span class="label">Learning streak</span><strong>${streak} day${streak===1?'':'s'}</strong><small>Regular practice matters more than perfect scores.</small></div><div class="mini-stat"><span class="label">Knowledge checks</span><strong>${totalAnswers().toLocaleString()}</strong><small>${totalAnswers()?overall+'% correct overall':'Build your first results'}</small></div><div class="mini-stat"><span class="label">Question library</span><strong>${BANK.length.toLocaleString()}+</strong><small>Across Grade 5 subjects and enrichment.</small></div></section>
       <div class="section-head"><div><span class="eyebrow">CHOOSE A SUBJECT</span><h2>Your learning library</h2><p>Big buttons, simple choices, no teams and no leaderboards.</p></div></div>
@@ -169,6 +189,7 @@
     els.home.querySelectorAll('[data-subject]').forEach(b=>b.onclick=()=>{currentSubject=b.dataset.subject;currentMode=null;setView('subject');});
     document.getElementById('continueBtn').onclick=()=>continueLearning();
     document.getElementById('dailyMixBtn').onclick=()=>startDailyMix();
+    document.getElementById('changeBuddyBtn').onclick=()=>openBuddyChooser();
     if(document.getElementById('focusStart')) document.getElementById('focusStart').onclick=()=>startFocusQuiz();
   }
   function continueLearning(){
@@ -258,7 +279,7 @@
     if(!session)return; const step=session.steps[session.index]; const total=session.steps.length; els.sessionFill.style.width=`${Math.round((session.index/Math.max(1,total-1))*100)}%`; els.sessionCount.textContent=`${Math.min(session.index+1,total)} / ${total}`;
     if(step.type==='info') renderInfoStep(step); else if(step.type==='question') renderQuestionStep(step); else renderRecapStep(step);
   }
-  function coachHeader(kicker,title){ return `<div class="coach-row"><div class="coach-avatar"><img src="assets/ms-nova.png" alt="Ms. Nova"></div><div class="coach-copy"><small>${esc(kicker)}</small><h2>${esc(title)}</h2></div></div>`; }
+  function coachHeader(kicker,title){ const b=currentBuddy(); return `<div class="coach-row"><div class="coach-avatar"><img src="${b.img}" alt="${esc(b.name)} learning buddy"></div><div class="coach-copy"><small>${esc(b.name)} · ${esc(kicker)}</small><h2>${esc(title)}</h2></div></div>`; }
   function renderInfoStep(step){
     els.sessionStage.innerHTML=`<article class="lesson-card">${coachHeader(step.kicker,step.title)}<div class="lesson-content"><p>${esc(step.body)}</p>${step.idea?`<div class="big-idea"><strong>Key idea</strong>${esc(step.idea)}</div>`:''}${step.example?`<div class="example-box"><small>${step.kicker==='Connect it'?'TRY THIS':'WORKED / CONCRETE EXAMPLE'}</small><p>${esc(step.example)}</p></div>`:''}<div class="lesson-next">${state.settings.speech?'<button id="readStep" class="secondary-button">🔊 Read aloud</button>':''}<button id="nextStep" class="primary-button">Continue →</button></div></div></article>`;
     if(document.getElementById('readStep')) document.getElementById('readStep').onclick=()=>speak(`${step.title}. ${step.body}. ${step.idea||''}. ${step.example||''}`);
@@ -320,6 +341,16 @@
     els.progress.innerHTML=`<section class="progress-hero"><span class="kicker" style="color:#facc15">MY LEARNING</span><h1>${esc(state.learner.name)}’s progress</h1><p>This page keeps the learner view simple: subjects practised, recent work and steady progress.</p><div class="star-row">${Array.from({length:Math.min(8,Math.max(1,sessions))},()=>'<span class="star">★</span>').join('')}</div></section><section class="today-strip"><div class="mini-stat"><span class="label">Sessions</span><strong>${sessions}</strong><small>Learning modules, lessons and quizzes.</small></div><div class="mini-stat"><span class="label">Overall accuracy</span><strong>${answers?accuracy+'%':'—'}</strong><small>${answers.toLocaleString()} knowledge checks.</small></div><div class="mini-stat"><span class="label">Streak</span><strong>${streak} day${streak===1?'':'s'}</strong><small>Keep it steady, not stressful.</small></div><div class="mini-stat"><span class="label">Study time</span><strong>${totalMinutes()} min</strong><small>Approximate active session time.</small></div></section><div class="section-head"><div><span class="eyebrow">SUBJECTS</span><h2>How each area is going</h2></div></div><section class="progress-subjects">${cards}</section><div class="section-head"><div><span class="eyebrow">RECENT</span><h2>Latest learning</h2></div></div><section class="recent-list">${recent}</section>`;
   }
 
+  function openBuddyChooser(){
+    const existing=document.getElementById('buddyChooserOverlay'); if(existing) existing.remove();
+    const wrap=document.createElement('section'); wrap.id='buddyChooserOverlay'; wrap.className='buddy-chooser-overlay';
+    wrap.innerHTML=`<div class="buddy-chooser-card"><div class="buddy-chooser-head"><div><span class="kicker">YOUR LEARNING BUDDY</span><h2>Who should learn with you?</h2><p>Pick any buddy. Your lessons and progress stay exactly the same.</p></div><button id="closeBuddyChooser" class="round-button" aria-label="Close">✕</button></div>${buddyChoices(currentBuddy().id,'quickBuddy')}</div>`;
+    document.body.appendChild(wrap);
+    document.getElementById('closeBuddyChooser').onclick=()=>wrap.remove();
+    wrap.addEventListener('click',e=>{ if(e.target===wrap) wrap.remove(); });
+    wrap.querySelectorAll('input[name="quickBuddy"]').forEach(r=>r.addEventListener('change',()=>{ state.learner.buddy=r.value; saveState(); wrap.remove(); renderHome(); toast(buddyById(r.value).name+' is now your learning buddy.'); }));
+  }
+
   /* ---------- parent dashboard ---------- */
   function openParent(){ parentUnlocked=false; els.parent.classList.remove('hidden');els.parentDash.classList.add('hidden');els.parentGate.classList.remove('hidden');renderParentGate(); }
   function closeParent(){ els.parent.classList.add('hidden');parentUnlocked=false; }
@@ -358,17 +389,18 @@
     return `<div class="admin-card"><h3>Teaching-resource foundation</h3><p class="muted">The app’s lessons and questions are original. These public educator resources were used to structure standards coverage and lesson approaches; the app does not copy their lesson text.</p><div class="resource-list">${RESOURCES.map(r=>`<div class="resource-item"><strong>${esc(r.title)}</strong><p>${esc(r.subject)} — ${esc(r.note)}</p><a href="${esc(r.url)}" target="_blank" rel="noopener">Open source resource ↗</a></div>`).join('')}</div></div>`;
   }
   function parentSettingsHTML(){
-    return `<div class="admin-card"><h3>Learner & home-learning settings</h3><form id="parentSettingsForm" class="form-grid"><div class="settings-grid"><div class="field"><label for="adminName">Learner name</label><input id="adminName" maxlength="24" value="${esc(state.learner.name)}"></div><div class="field"><label for="weeklyGoal">Weekly learning-day goal</label><select id="weeklyGoal">${[3,4,5,6,7].map(n=>`<option value="${n}" ${n===Number(state.parent.weeklyGoal)?'selected':''}>${n} days</option>`).join('')}</select></div><div class="field"><label for="sessionLength">Typical lesson length</label><select id="sessionLength">${[10,15,20,25,30].map(n=>`<option value="${n}" ${n===Number(state.parent.sessionLength)?'selected':''}>${n} minutes</option>`).join('')}</select></div><div class="field"><label for="newLearnerPin">New learner PIN</label><input id="newLearnerPin" inputmode="numeric" maxlength="6" placeholder="Leave blank to keep current"><small>Use 0000 to remove the learner PIN.</small></div></div><label class="toggle-line"><span><b>Read-aloud buttons</b><br><small class="muted">Show device voice controls during learning.</small></span><input id="speechSetting" type="checkbox" ${state.settings.speech?'checked':''}></label><label class="toggle-line"><span><b>Hints during learning checks</b><br><small class="muted">Hints are never shown in quiz/test mode.</small></span><input id="hintSetting" type="checkbox" ${state.settings.hints?'checked':''}></label><button class="primary-button" type="submit">Save settings</button></form><hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h3>Change parent PIN</h3><form id="parentPinChange" class="form-grid"><div class="pin-row"><div class="field"><label for="newParentPin">New parent PIN</label><input id="newParentPin" inputmode="numeric" maxlength="6" placeholder="4–6 digits" required></div><div class="field"><label for="confirmParentPin">Confirm PIN</label><input id="confirmParentPin" inputmode="numeric" maxlength="6" placeholder="Repeat" required></div></div><button class="secondary-button" type="submit">Change parent PIN</button></form></div>`;
+    return `<div class="admin-card"><h3>Learner & home-learning settings</h3><form id="parentSettingsForm" class="form-grid"><div class="field"><label>Learning buddy</label>${buddyChoices(currentBuddy().id,'adminBuddy')}<small>The learner can also change buddy from the home screen.</small></div><div class="settings-grid"><div class="field"><label for="adminName">Learner name</label><input id="adminName" maxlength="24" value="${esc(state.learner.name)}"></div><div class="field"><label for="weeklyGoal">Weekly learning-day goal</label><select id="weeklyGoal">${[3,4,5,6,7].map(n=>`<option value="${n}" ${n===Number(state.parent.weeklyGoal)?'selected':''}>${n} days</option>`).join('')}</select></div><div class="field"><label for="sessionLength">Typical lesson length</label><select id="sessionLength">${[10,15,20,25,30].map(n=>`<option value="${n}" ${n===Number(state.parent.sessionLength)?'selected':''}>${n} minutes</option>`).join('')}</select></div><div class="field"><label for="newLearnerPin">New learner PIN</label><input id="newLearnerPin" inputmode="numeric" maxlength="6" placeholder="Leave blank to keep current"><small>Use 0000 to remove the learner PIN.</small></div></div><label class="toggle-line"><span><b>Read-aloud buttons</b><br><small class="muted">Show device voice controls during learning.</small></span><input id="speechSetting" type="checkbox" ${state.settings.speech?'checked':''}></label><label class="toggle-line"><span><b>Hints during learning checks</b><br><small class="muted">Hints are never shown in quiz/test mode.</small></span><input id="hintSetting" type="checkbox" ${state.settings.hints?'checked':''}></label><button class="primary-button" type="submit">Save settings</button></form><hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h3>Change parent PIN</h3><form id="parentPinChange" class="form-grid"><div class="pin-row"><div class="field"><label for="newParentPin">New parent PIN</label><input id="newParentPin" inputmode="numeric" maxlength="6" placeholder="4–6 digits" required></div><div class="field"><label for="confirmParentPin">Confirm PIN</label><input id="confirmParentPin" inputmode="numeric" maxlength="6" placeholder="Repeat" required></div></div><button class="secondary-button" type="submit">Change parent PIN</button></form></div>`;
   }
   function wireParentSettings(){
-    document.getElementById('parentSettingsForm').onsubmit=async e=>{e.preventDefault();const name=document.getElementById('adminName').value.trim();if(!name)return toast('Learner name cannot be blank.');state.learner.name=name;state.parent.weeklyGoal=Number(document.getElementById('weeklyGoal').value);state.parent.sessionLength=Number(document.getElementById('sessionLength').value);state.settings.speech=document.getElementById('speechSetting').checked;state.settings.hints=document.getElementById('hintSetting').checked;const lp=document.getElementById('newLearnerPin').value.trim();if(lp){if(lp==='0000')state.learner.pinHash='';else if(/^\d{4,6}$/.test(lp))state.learner.pinHash=await pinHash(lp);else return toast('Learner PIN must be 4–6 digits.');}saveState();toast('Settings saved.');renderParentDashboard('settings');if(learnerUnlocked)renderHome();};
+    document.querySelectorAll('input[name="adminBuddy"]').forEach(r=>r.addEventListener('change',()=>document.querySelectorAll('#parentSettingsForm .buddy-option').forEach(o=>o.classList.toggle('selected',o.querySelector('input').checked))));
+    document.getElementById('parentSettingsForm').onsubmit=async e=>{e.preventDefault();const name=document.getElementById('adminName').value.trim();if(!name)return toast('Learner name cannot be blank.');state.learner.name=name;state.learner.buddy=document.querySelector('input[name="adminBuddy"]:checked')?.value||state.learner.buddy||'alex';state.parent.weeklyGoal=Number(document.getElementById('weeklyGoal').value);state.parent.sessionLength=Number(document.getElementById('sessionLength').value);state.settings.speech=document.getElementById('speechSetting').checked;state.settings.hints=document.getElementById('hintSetting').checked;const lp=document.getElementById('newLearnerPin').value.trim();if(lp){if(lp==='0000')state.learner.pinHash='';else if(/^\d{4,6}$/.test(lp))state.learner.pinHash=await pinHash(lp);else return toast('Learner PIN must be 4–6 digits.');}saveState();toast('Settings saved.');renderParentDashboard('settings');if(learnerUnlocked)renderHome();};
     document.getElementById('parentPinChange').onsubmit=async e=>{e.preventDefault();const a=document.getElementById('newParentPin').value,b=document.getElementById('confirmParentPin').value;if(!/^\d{4,6}$/.test(a))return toast('Parent PIN must be 4–6 digits.');if(a!==b)return toast('The parent PINs do not match.');state.parent.pinHash=await pinHash(a);saveState();toast('Parent PIN changed.');document.getElementById('parentPinChange').reset();};
   }
   function parentDataHTML(){ return `<div class="admin-card"><h3>Progress data</h3><p class="muted">This flat PWA is local-first: the learner profile and progress stay in this browser/device. Export a backup before clearing browser data or moving devices. A cloud-sync backend can be added later if required.</p><div class="data-actions"><button id="exportJson" class="primary-button">Export full backup</button><button id="exportCsv" class="secondary-button">Export session CSV</button><label class="secondary-button" style="display:inline-flex;align-items:center;cursor:pointer">Import backup<input id="importJson" type="file" accept="application/json" hidden></label><button id="resetData" class="danger-button">Reset progress</button></div><div class="big-idea" style="margin-top:20px"><strong>Privacy note</strong>No account data is sent to a server in this build. The PIN prevents casual access inside the app but is not a substitute for device security.</div></div>`; }
   function wireParentData(){
-    document.getElementById('exportJson').onclick=()=>downloadBlob(JSON.stringify(state,null,2),'nova-learning-backup.json','application/json');
-    document.getElementById('exportCsv').onclick=()=>{const rows=[['Date','Subject','Unit','Activity','Correct','Total','Minutes'],...state.progress.history.map(h=>[h.date,h.subject,h.unitTitle,modeLabel(h.mode),h.correct,h.total,Math.round((h.durationSec||0)/60)])];const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');downloadBlob(csv,'nova-learning-sessions.csv','text/csv');};
-    document.getElementById('importJson').onchange=e=>{const f=e.target.files?.[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{try{const incoming=JSON.parse(reader.result);if(!incoming.setup||!incoming.learner||!incoming.progress)throw new Error('Invalid');if(confirm('Replace the current local profile and progress with this backup?')){localStorage.setItem(KEY,JSON.stringify(incoming));state=loadState();toast('Backup imported.');renderParentDashboard('overview');}}catch(err){toast('That file is not a valid Nova Learning backup.');}};reader.readAsText(f);};
+    document.getElementById('exportJson').onclick=()=>downloadBlob(JSON.stringify(state,null,2),'learning-buddy-backup.json','application/json');
+    document.getElementById('exportCsv').onclick=()=>{const rows=[['Date','Subject','Unit','Activity','Correct','Total','Minutes'],...state.progress.history.map(h=>[h.date,h.subject,h.unitTitle,modeLabel(h.mode),h.correct,h.total,Math.round((h.durationSec||0)/60)])];const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');downloadBlob(csv,'learning-buddy-sessions.csv','text/csv');};
+    document.getElementById('importJson').onchange=e=>{const f=e.target.files?.[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{try{const incoming=JSON.parse(reader.result);if(!incoming.setup||!incoming.learner||!incoming.progress)throw new Error('Invalid');if(confirm('Replace the current local profile and progress with this backup?')){localStorage.setItem(KEY,JSON.stringify(incoming));state=loadState();toast('Backup imported.');renderParentDashboard('overview');}}catch(err){toast('That file is not a valid Learning Buddy backup.');}};reader.readAsText(f);};
     document.getElementById('resetData').onclick=()=>{if(confirm('Reset learning progress but keep the learner and parent setup?')){state.progress=defaultState().progress;saveState();toast('Progress reset.');renderParentDashboard('overview');if(learnerUnlocked)renderHome();}};
   }
   function downloadBlob(text,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),500);}

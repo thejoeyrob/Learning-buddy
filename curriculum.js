@@ -1,6 +1,6 @@
-window.NOVA_SUBJECTS = {
+window.LB_SUBJECTS = {
   "Mathematics": {
-    key:"math", icon:"assets/math.svg", accent:"#6c5ce7", tint:"#f3efff",
+    key:"math", icon:"math.jpg", accent:"#6c5ce7", tint:"#f3efff",
     desc:"Numbers, fractions, decimals, geometry, measurement, data and problem solving.",
     standardsNote:"Indiana Grade 5 Mathematics (2023 IAS) + the supplied current ILEARN-style focus.",
     units:[
@@ -19,7 +19,7 @@ window.NOVA_SUBJECTS = {
     ]
   },
   "English Language Arts": {
-    key:"ela", icon:"assets/ela.svg", accent:"#ff6b6b", tint:"#fff0f0",
+    key:"ela", icon:"ela.jpg", accent:"#ff6b6b", tint:"#fff0f0",
     desc:"Reading, vocabulary, grammar, writing, speaking and evidence-based thinking.",
     standardsNote:"Indiana Grade 5 ELA (2023 IAS): Reading Foundations, Reading Comprehension, Writing, Communication & Collaboration.",
     units:[
@@ -33,7 +33,7 @@ window.NOVA_SUBJECTS = {
     ]
   },
   "Science": {
-    key:"science", icon:"assets/science.svg", accent:"#00a878", tint:"#e7fff7",
+    key:"science", icon:"science.jpg", accent:"#00a878", tint:"#e7fff7",
     desc:"Matter, forces, ecosystems, Earth and space, and engineering investigations.",
     standardsNote:"Indiana Grade 5 Science (2023 IAS / NGSS-aligned performance expectations).",
     units:[
@@ -49,7 +49,7 @@ window.NOVA_SUBJECTS = {
     ]
   },
   "Social Studies": {
-    key:"social", icon:"assets/social.svg", accent:"#f59e0b", tint:"#fff7e6",
+    key:"social", icon:"social.jpg", accent:"#f59e0b", tint:"#fff7e6",
     desc:"Early America, the Revolution, civics, U.S. geography and economic decision making.",
     standardsNote:"Indiana Grade 5 Social Studies domains: History, Civics & Government, Geography and Economics.",
     units:[
@@ -64,7 +64,7 @@ window.NOVA_SUBJECTS = {
     ]
   },
   "Computer Science & STEM": {
-    key:"cs", icon:"assets/cs.svg", accent:"#2563eb", tint:"#eaf2ff",
+    key:"cs", icon:"cs.jpg", accent:"#2563eb", tint:"#eaf2ff",
     desc:"Algorithms, debugging, data, digital citizenship and engineering design.",
     standardsNote:"Indiana Grades 3–5 Computer Science + integrated STEM practices.",
     units:[
@@ -76,7 +76,7 @@ window.NOVA_SUBJECTS = {
     ]
   },
   "Health & Wellbeing": {
-    key:"health", icon:"assets/health.svg", accent:"#ec4899", tint:"#fff0f7",
+    key:"health", icon:"health.jpg", accent:"#ec4899", tint:"#fff0f7",
     desc:"Healthy routines, safety, emotions, relationships and sensible everyday choices.",
     standardsNote:"Home-learning enrichment informed by Grade 5 health and wellness themes.",
     units:[
@@ -87,7 +87,7 @@ window.NOVA_SUBJECTS = {
     ]
   },
   "Creative Arts": {
-    key:"arts", icon:"assets/arts.svg", accent:"#8b5cf6", tint:"#f4eeff",
+    key:"arts", icon:"arts.jpg", accent:"#8b5cf6", tint:"#f4eeff",
     desc:"Visual art, music, design and creative communication through hands-on mini projects.",
     standardsNote:"Grade 5 creative enrichment informed by visual arts and music learning practices.",
     units:[
@@ -99,7 +99,7 @@ window.NOVA_SUBJECTS = {
   }
 };
 
-window.NOVA_RESOURCES = [
+window.LB_RESOURCES = [
   {subject:"Mathematics",title:"Indiana Academic Standards — Mathematics",url:"https://www.in.gov/doe/students/indiana-academic-standards/mathematics/",note:"Used to structure Grade 5 math domains and skills."},
   {subject:"English Language Arts",title:"Indiana Academic Standards — English/Language Arts",url:"https://www.in.gov/doe/students/indiana-academic-standards/englishlanguage-arts/",note:"Used to structure reading foundations, comprehension, writing and communication."},
   {subject:"Science",title:"Indiana Academic Standards — Science & Computer Science",url:"https://www.in.gov/doe/students/indiana-academic-standards/science-and-computer-science/",note:"Used to structure Grade 5 science and Grade 3–5 computer science."},
@@ -110,7 +110,7 @@ window.NOVA_RESOURCES = [
   {subject:"Social Studies",title:"National Archives — Constitution Workshop",url:"https://www.archives.gov/education/lessons/constitution-workshop",note:"Informed primary-source and evidence-based civics activities."}
 ];
 
-window.NOVA_SCHOOL_FOCUS = {
+window.LB_SCHOOL_FOCUS = {
   title:"Current school math focus",
   subtitle:"From the supplied Grade 5 ILEARN-style practice",
   standards:["5.M.4","5.M.5","5.NS.1","5.CA.1","5.CA.2"],
