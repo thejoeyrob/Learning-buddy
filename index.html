@@ -2,152 +2,66 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#10243e" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#6c5ce7" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Nova Math" />
-  <meta name="description" content="Grade 5 home-learning math practice aligned to the supplied ILEARN-style curriculum." />
+  <meta name="apple-mobile-web-app-title" content="Nova Learning" />
+  <meta name="description" content="A visual Grade 5 home-learning studio with guided lessons, knowledge checks, quizzes and parent progress dashboard." />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-180.png" />
   <link rel="icon" href="icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
-  <title>Nova Math Studio — Grade 5 Home Learning</title>
+  <title>Nova Learning Studio — Grade 5</title>
 </head>
 <body>
-  <div class="app-shell">
+  <div id="authScreen" class="auth-screen"></div>
+
+  <div id="appShell" class="app-shell hidden">
     <header class="topbar">
-      <button class="brand" data-nav="home" aria-label="Nova Math Studio home">
-        <span class="brand-mark">N5</span>
-        <span><strong>Nova Math Studio</strong><small>Grade 5 home learning</small></span>
+      <button id="homeBtn" class="brand" aria-label="Home">
+        <span class="brand-orbit"><b>NL</b><i>★</i></span>
+        <span class="brand-copy"><strong>Nova Learning Studio</strong><small>Grade 5 home learning</small></span>
       </button>
-      <button id="installBtn" class="icon-button hidden" type="button">Install</button>
+      <div class="top-actions">
+        <button id="installBtn" class="mini-button hidden" type="button">Install</button>
+        <button id="parentBtn" class="round-button" type="button" aria-label="Parent dashboard" title="Parent dashboard">🔒</button>
+      </div>
     </header>
 
-    <main id="mainContent">
-      <section id="homeView" class="view active" aria-labelledby="homeTitle">
-        <div class="hero card">
-          <div class="hero-copy">
-            <p class="eyebrow">TODAY'S HOME LESSON</p>
-            <h1 id="homeTitle">Build confidence, one clear step at a time.</h1>
-            <p class="hero-text">Short teaching moments, worked hints, adaptive practice and a parent-friendly progress record. No teams, leaderboards or multiplayer.</p>
-            <div class="hero-actions">
-              <button class="button primary" id="startDaily">Start today's lesson</button>
-              <button class="button secondary" id="quickPractice">Quick 5</button>
-            </div>
-          </div>
-          <div class="mascot-wrap">
-            <img src="mascot-ms-nova.svg" alt="Ms. Nova, the friendly Nova Math teacher mascot" class="mascot" />
-            <div class="speech" id="mascotSpeech">Hi! I'm Ms. Nova. We'll learn it, try it, then explain why it works.</div>
-          </div>
-        </div>
-
-        <div class="stats-grid" aria-label="Study summary">
-          <article class="stat card"><span class="stat-label">Today's plan</span><strong id="todayPlan">12 questions</strong><small>Adaptive mixed practice</small></article>
-          <article class="stat card"><span class="stat-label">Overall accuracy</span><strong id="overallAccuracy">—</strong><small id="overallAttempts">No answers yet</small></article>
-          <article class="stat card"><span class="stat-label">Learning streak</span><strong id="studyStreak">0 days</strong><small>Study days, not score chasing</small></article>
-        </div>
-
-        <section class="section-block">
-          <div class="section-heading"><div><p class="eyebrow">CURRICULUM PATH</p><h2>Choose a focus</h2></div><button class="text-button" data-nav="progress">View progress</button></div>
-          <div id="skillCards" class="skill-grid"></div>
-        </section>
-
-        <section class="section-block learn-block card">
-          <div class="section-heading"><div><p class="eyebrow">LEARN BEFORE PRACTICE</p><h2>Mini lessons</h2></div></div>
-          <div id="lessonTabs" class="lesson-tabs" role="tablist"></div>
-          <div id="lessonContent" class="lesson-content"></div>
-        </section>
-      </section>
-
-      <section id="progressView" class="view" aria-labelledby="progressTitle">
-        <div class="page-head"><div><p class="eyebrow">LEARNING RECORD</p><h1 id="progressTitle">Progress by standard</h1><p>Accuracy is only one signal. The app also tracks attempts, recent practice and questions that need another look.</p></div></div>
-        <div id="progressCards" class="progress-list"></div>
-        <div class="card report-card">
-          <div class="section-heading"><div><h2>Recent study</h2><p>Your latest practice sessions are stored only on this device.</p></div></div>
-          <div id="historyList" class="history-list"></div>
-        </div>
-      </section>
-
-      <section id="parentView" class="view" aria-labelledby="parentTitle">
-        <div class="page-head"><div><p class="eyebrow">HOME EDUCATOR VIEW</p><h1 id="parentTitle">Parent / teacher summary</h1><p>Use this view to spot the next skill to revisit, rather than focusing only on the final score.</p></div></div>
-        <div id="parentSummary" class="card report-card"></div>
-        <div class="report-actions">
-          <button id="downloadReport" class="button secondary">Download progress CSV</button>
-          <button id="resetProgress" class="button danger">Reset local progress</button>
-        </div>
-        <div class="source-note card">
-          <strong>Curriculum basis</strong>
-          <p>This app is aligned to the five Grade 5 standards supplied in the practice document: 5.M.4, 5.M.5, 5.NS.1, 5.CA.1 and 5.CA.2. It is an independent home-learning tool and is not an official IDOE/ILEARN product.</p>
-        </div>
-      </section>
-
-      <section id="settingsView" class="view" aria-labelledby="settingsTitle">
-        <div class="page-head"><div><p class="eyebrow">PERSONALISE</p><h1 id="settingsTitle">Study settings</h1></div></div>
-        <form id="settingsForm" class="card settings-card">
-          <label>Learner name<input id="learnerName" maxlength="24" autocomplete="off" placeholder="Learner" /></label>
-          <label>Daily lesson length<select id="dailyCount"><option value="8">8 questions</option><option value="12">12 questions</option><option value="15">15 questions</option><option value="20">20 questions</option></select></label>
-          <label class="toggle-row"><span><strong>Read aloud controls</strong><small>Show a button to read questions using the device voice.</small></span><input id="speechToggle" type="checkbox" /></label>
-          <button class="button primary" type="submit">Save settings</button>
-        </form>
-      </section>
+    <main id="mainContent" class="main-content">
+      <section id="homeView" class="view"></section>
+      <section id="subjectView" class="view hidden"></section>
+      <section id="progressView" class="view hidden"></section>
     </main>
 
-    <nav class="bottom-nav" aria-label="Main navigation">
-      <button data-nav="home" class="nav-item active"><span>⌂</span>Home</button>
-      <button data-nav="progress" class="nav-item"><span>◎</span>Progress</button>
-      <button data-nav="parent" class="nav-item"><span>▤</span>Parent</button>
-      <button data-nav="settings" class="nav-item"><span>⚙</span>Settings</button>
+    <nav class="child-nav" aria-label="Learner navigation">
+      <button id="navHome" class="nav-button active"><span>⌂</span><b>Home</b></button>
+      <button id="navProgress" class="nav-button"><span>★</span><b>My progress</b></button>
+      <button id="navLogout" class="nav-button"><span>↪</span><b>Sign out</b></button>
     </nav>
   </div>
 
-  <section id="practiceOverlay" class="practice-overlay hidden" aria-live="polite">
-    <header class="practice-top">
-      <button id="exitPractice" class="icon-button" aria-label="Exit practice">✕</button>
-      <div class="practice-progress"><div class="practice-progress-fill" id="practiceProgressFill"></div></div>
-      <span id="practiceCount" class="practice-count">1 / 12</span>
+  <section id="sessionOverlay" class="session-overlay hidden" aria-live="polite">
+    <header class="session-topbar">
+      <button id="sessionClose" class="round-button light" aria-label="Exit session">✕</button>
+      <div class="session-progress"><i id="sessionProgressFill"></i></div>
+      <span id="sessionStepCount">1 / 6</span>
     </header>
-    <div class="practice-stage">
-      <div class="teacher-strip">
-        <img src="mascot-ms-nova.svg" alt="" class="mascot-small" />
-        <div><strong id="practiceSkill">Volume</strong><p id="practiceCoach">Read the question carefully. You can use the scratchpad.</p></div>
-      </div>
-
-      <article class="question-card card">
-        <div class="question-meta"><span id="questionStandard">5.M.4</span><span id="questionDifficulty">Level 1</span></div>
-        <h2 id="questionPrompt"></h2>
-        <div id="answerArea" class="answer-area"></div>
-        <div class="question-tools">
-          <button id="hintBtn" class="tool-button">Hint</button>
-          <button id="readBtn" class="tool-button">Read aloud</button>
-          <button id="scratchBtn" class="tool-button">Scratchpad</button>
-        </div>
-        <div id="hintBox" class="hint-box hidden"></div>
-        <div id="feedbackBox" class="feedback-box hidden"></div>
-        <button id="checkBtn" class="button primary full">Check answer</button>
-        <button id="nextBtn" class="button primary full hidden">Next question</button>
-      </article>
-
-      <div id="scratchPanel" class="scratch-panel card hidden">
-        <div class="scratch-head"><strong>Scratchpad</strong><button id="clearScratch" class="text-button">Clear</button></div>
-        <canvas id="scratchCanvas" width="900" height="420" aria-label="Drawing scratchpad"></canvas>
-      </div>
-    </div>
+    <main id="sessionStage" class="session-stage"></main>
   </section>
 
-  <section id="resultsOverlay" class="results-overlay hidden">
-    <div class="results-card card">
-      <div class="results-icon">✓</div>
-      <p class="eyebrow">SESSION COMPLETE</p>
-      <h2 id="resultsTitle">Nice work.</h2>
-      <p id="resultsSummary"></p>
-      <div id="resultsBreakdown" class="results-breakdown"></div>
-      <button id="resultsHome" class="button primary full">Back to home</button>
-      <button id="reviewMistakes" class="button secondary full">Review mistakes</button>
-    </div>
+  <section id="parentOverlay" class="parent-overlay hidden" aria-modal="true" role="dialog">
+    <div id="parentGate" class="parent-gate"></div>
+    <div id="parentDashboard" class="parent-dashboard hidden"></div>
   </section>
+
+  <div id="toast" class="toast hidden" role="status"></div>
 
   <script src="question-bank.js"></script>
+  <script src="extras.js"></script>
+  <script src="math-extras.js"></script>
+  <script src="curriculum.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,237 +1,388 @@
 (() => {
+  'use strict';
+
   const BANK = window.NOVA_QUESTION_BANK || [];
-  const STANDARDS = {
-    '5.M.4': {title:'Build volume with cubes', short:'Cubes, layers & base area', desc:'Understand volume by packing right rectangular prisms with unit cubes and connect the cubes to multiplication.'},
-    '5.M.5': {title:'Use volume formulas', short:'V = l × w × h and B × h', desc:'Use V = l × w × h and V = B × h to solve volume problems, including missing dimensions.'},
-    '5.NS.1': {title:'Compare & order numbers', short:'Fractions, mixed numbers & decimals', desc:'Compare and order fractions, mixed numbers and decimals to thousandths using number-line and place-value reasoning.'},
-    '5.CA.1': {title:'Whole-number division', short:'2-digit divisors & remainders', desc:'Find whole-number quotients and remainders with up to four-digit dividends and two-digit divisors, and explain the reasoning.'},
-    '5.CA.2': {title:'Solve real-world problems', short:'Multiplication, division & remainders', desc:'Solve real-world multiplication and division problems and explain what a remainder means in context.'}
+  const SUBJECTS = window.NOVA_SUBJECTS || {};
+  const RESOURCES = window.NOVA_RESOURCES || [];
+  const SCHOOL_FOCUS = window.NOVA_SCHOOL_FOCUS || null;
+  const KEY = 'nova-learning-grade5-v3';
+  const SUBJECT_NAMES = Object.keys(SUBJECTS);
+
+  const els = {
+    auth: document.getElementById('authScreen'), shell: document.getElementById('appShell'), home: document.getElementById('homeView'),
+    subject: document.getElementById('subjectView'), progress: document.getElementById('progressView'), session: document.getElementById('sessionOverlay'),
+    sessionStage: document.getElementById('sessionStage'), sessionFill: document.getElementById('sessionProgressFill'), sessionCount: document.getElementById('sessionStepCount'),
+    parent: document.getElementById('parentOverlay'), parentGate: document.getElementById('parentGate'), parentDash: document.getElementById('parentDashboard'), toast: document.getElementById('toast')
   };
-  const LESSONS = {
-    '5.M.4': {title:'Think in layers', body:'Volume is the number of unit cubes that fill a 3D space. A rectangular prism can be counted one layer at a time. Find the cubes in one layer, then multiply by the number of layers.', example:'4 × 3 cubes in each layer = 12. With 2 layers: 12 × 2 = 24 cubic units.', remember:'Length × width gives one layer. Height tells you how many equal layers there are.'},
-    '5.M.5': {title:'Two useful volume formulas', body:'For a rectangular prism, use V = l × w × h. If the base area is already known, use V = B × h. To find a missing dimension, undo multiplication with division.', example:'Base area 28 cm² and height 6 cm: V = 28 × 6 = 168 cm³.', remember:'Volume is measured in cubic units. Base area is measured in square units.'},
-    '5.NS.1': {title:'Make different forms comparable', body:'Fractions, mixed numbers and decimals can be compared when you rewrite them in a common form. Decimals to thousandths are especially useful because place value lines up clearly.', example:'5/8 = 0.625, so 0.625 and 5/8 are equal.', remember:'Line up decimal points. 0.47 can be written 0.470, which makes comparison with 0.407 easier.'},
-    '5.CA.1': {title:'Divide, then check', body:'When dividing by a two-digit divisor, estimate first, use partial quotients or standard division, then check with multiplication. A remainder must always be smaller than the divisor.', example:'2,437 ÷ 32 = 76 R5 because 32 × 76 = 2,432 and 2,437 − 2,432 = 5.', remember:'Check using divisor × quotient + remainder = dividend.'},
-    '5.CA.2': {title:'The remainder has meaning', body:'Real-world division is not finished when you write a remainder. Decide what the remainder means. Sometimes you round up, sometimes you use only full groups, and sometimes the remainder is what is left over.', example:'157 students ÷ 40 per bus = 3 R37, but the 37 students still need a bus, so 4 buses are needed.', remember:'Ask: what does the quotient represent, and what does the remainder represent in this situation?'}
-  };
-  const STORAGE_KEY='novaMathStudio.v1';
-  const defaultData={
-    profile:{name:'Learner'},
-    settings:{dailyCount:12,speech:true},
-    totals:{attempts:0,correct:0},
-    standards:Object.fromEntries(Object.keys(STANDARDS).map(k=>[k,{attempts:0,correct:0,last:null}])),
-    history:[], mistakes:[], seen:[], streak:{count:0,lastDate:null}
-  };
-  let data=loadData();
-  let session=null;
-  let selectedChoice=null;
-  let deferredPrompt=null;
 
-  const $=id=>document.getElementById(id);
-  const qsa=s=>[...document.querySelectorAll(s)];
-  function loadData(){
-    try{const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)); return merge(defaultData,saved||{});}catch(e){return structuredClone(defaultData)}
-  }
-  function merge(base,over){
-    const out=structuredClone(base);
-    Object.keys(over||{}).forEach(k=>{
-      if(over[k] && typeof over[k]==='object' && !Array.isArray(over[k]) && out[k] && typeof out[k]==='object' && !Array.isArray(out[k])) out[k]={...out[k],...over[k]};
-      else out[k]=over[k];
-    });
-    out.standards={...structuredClone(base.standards),...(over.standards||{})};
-    return out;
-  }
-  function saveData(){localStorage.setItem(STORAGE_KEY,JSON.stringify(data));}
-  function pct(n,d){return d?Math.round(n/d*100):0}
-  function esc(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
-  function todayKey(){return new Date().toISOString().slice(0,10)}
-  function updateStreak(){
-    const t=todayKey(), last=data.streak.lastDate;
-    if(last===t) return;
-    if(last){const d=(new Date(t)-new Date(last))/86400000; data.streak.count=d===1?data.streak.count+1:1;} else data.streak.count=1;
-    data.streak.lastDate=t; saveData();
-  }
+  const defaultState = () => ({
+    version: 3,
+    setup: false,
+    learner: { name:'', pinHash:'', createdAt:'' },
+    parent: { pinHash:'', weeklyGoal:5, sessionLength:15 },
+    settings: { speech:true, hints:true },
+    progress: { subject:{}, strand:{}, unit:{}, question:{}, history:[], wrong:[], studyDates:[] }
+  });
 
-  function renderHome(){
-    $('todayPlan').textContent=`${data.settings.dailyCount} questions`;
-    $('overallAccuracy').textContent=data.totals.attempts?`${pct(data.totals.correct,data.totals.attempts)}%`:'—';
-    $('overallAttempts').textContent=data.totals.attempts?`${data.totals.attempts} answers checked`:'No answers yet';
-    $('studyStreak').textContent=`${data.streak.count} day${data.streak.count===1?'':'s'}`;
-    $('mascotSpeech').textContent=data.profile.name && data.profile.name!=='Learner' ? `Ready, ${data.profile.name}? We’ll learn it, try it, then explain why it works.` : `Hi! I'm Ms. Nova. We'll learn it, try it, then explain why it works.`;
-    $('skillCards').innerHTML=Object.entries(STANDARDS).map(([code,s])=>{
-      const st=data.standards[code]||{attempts:0,correct:0}; const accuracy=pct(st.correct,st.attempts);
-      return `<button class="skill-card" data-start-focus="${code}"><div><span class="skill-code">${code}</span><h3>${esc(s.title)}</h3><p>${esc(s.short)}</p></div><div class="skill-bottom"><span>${st.attempts?accuracy+'% recent accuracy':'Start here'}</span><span>Practice →</span></div><div class="mini-progress"><span style="width:${st.attempts?accuracy:4}%"></span></div></button>`;
-    }).join('');
-    qsa('[data-start-focus]').forEach(b=>b.addEventListener('click',()=>startSession({mode:'focus',standard:b.dataset.startFocus,count:data.settings.dailyCount})));
-  }
+  let state = loadState();
+  let learnerUnlocked = false;
+  let parentUnlocked = false;
+  let currentView = 'home';
+  let currentSubject = SUBJECT_NAMES[0] || '';
+  let currentMode = null;
+  let session = null;
+  let deferredInstall = null;
+  let toastTimer = null;
 
-  function renderLessons(){
-    $('lessonTabs').innerHTML=Object.keys(LESSONS).map((k,i)=>`<button class="lesson-tab ${i===0?'active':''}" data-lesson="${k}">${k}</button>`).join('');
-    qsa('[data-lesson]').forEach(b=>b.addEventListener('click',()=>showLesson(b.dataset.lesson)));
-    showLesson(Object.keys(LESSONS)[0]);
+  function loadState(){
+    try{
+      const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if(!raw) return defaultState();
+      const d = defaultState();
+      return {
+        ...d, ...raw,
+        learner:{...d.learner,...(raw.learner||{})}, parent:{...d.parent,...(raw.parent||{})}, settings:{...d.settings,...(raw.settings||{})},
+        progress:{...d.progress,...(raw.progress||{}),subject:{...(raw.progress?.subject||{})},strand:{...(raw.progress?.strand||{})},unit:{...(raw.progress?.unit||{})},question:{...(raw.progress?.question||{})},history:[...(raw.progress?.history||[])],wrong:[...(raw.progress?.wrong||[])],studyDates:[...(raw.progress?.studyDates||[])]}
+      };
+    }catch(e){ return defaultState(); }
   }
-  function showLesson(code){
-    qsa('[data-lesson]').forEach(b=>b.classList.toggle('active',b.dataset.lesson===code));
-    const l=LESSONS[code];
-    $('lessonContent').innerHTML=`<h3>${esc(l.title)}</h3><p>${esc(l.body)}</p><div class="worked"><div><strong>Worked example</strong><p>${esc(l.example)}</p></div><div><strong>Remember</strong><p>${esc(l.remember)}</p></div></div><button class="button secondary" style="margin-top:14px" data-learn-practice="${code}">Practice this skill</button>`;
-    document.querySelector('[data-learn-practice]').addEventListener('click',()=>startSession({mode:'focus',standard:code,count:data.settings.dailyCount}));
+  function saveState(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+  function esc(v){ return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function clamp(n,a,b){ return Math.max(a,Math.min(b,n)); }
+  function pct(c,t){ return t ? Math.round((c/t)*100) : 0; }
+  function shuffle(arr){ const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+  function todayKey(d=new Date()){ return d.toISOString().slice(0,10); }
+  function dateLabel(iso){ const d=new Date(iso); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
+  function modeLabel(mode){ return mode==='module'?'Learning module':mode==='lesson'?'Guided lesson':'Quiz / test'; }
+  function modeIcon(mode){ return mode==='module'?'✦':mode==='lesson'?'▣':'✓'; }
+  function getSubjectConfig(name){ return SUBJECTS[name] || {accent:'#6c5ce7',tint:'#f0efff',units:[],desc:'',icon:'assets/math.svg'}; }
+  function unitKey(subject,unitId){ return subject+'::'+unitId; }
+  function unitProgress(subject,unitId){ return state.progress.unit[unitKey(subject,unitId)] || {module:0,lesson:0,quiz:0,last:null}; }
+  function subjectStats(subject){ return state.progress.subject[subject] || {correct:0,total:0,sessions:0}; }
+  function strandStats(subject,strand){ return state.progress.strand[subject+'::'+strand] || {correct:0,total:0}; }
+  function subjectProgress(subject){
+    const cfg=getSubjectConfig(subject), s=subjectStats(subject), completed=cfg.units.reduce((n,u)=>{const p=unitProgress(subject,u.id);return n+(p.module>0||p.lesson>0||p.quiz>0?1:0)},0);
+    const coverage=cfg.units.length?Math.round(completed/cfg.units.length*100):0;
+    const accuracy=s.total?pct(s.correct,s.total):0;
+    return s.total>=5?Math.round(accuracy*.72+coverage*.28):coverage;
   }
-
-  function renderProgress(){
-    $('progressCards').innerHTML=Object.entries(STANDARDS).map(([code,s])=>{
-      const st=data.standards[code]||{attempts:0,correct:0,last:null}; const accuracy=pct(st.correct,st.attempts);
-      const mastery=st.attempts<5?'Getting started':accuracy>=85?'Secure':accuracy>=70?'Developing':'Needs practice';
-      return `<article class="progress-card card"><div class="progress-head"><div><span class="skill-code">${code}</span><h3>${esc(s.title)}</h3><p>${esc(s.desc)}</p></div><div class="mastery-pill">${st.attempts?accuracy+'%':'New'}<br><small>${mastery}</small></div></div><div class="bar"><span style="width:${st.attempts?accuracy:2}%"></span></div><div class="progress-meta"><span>${st.attempts} attempts</span><span>${st.correct} correct</span><span>${st.last?'Last practiced '+new Date(st.last).toLocaleDateString():'Not practiced yet'}</span></div></article>`;
-    }).join('');
-    $('historyList').innerHTML=data.history.length?data.history.slice(0,10).map(h=>`<div class="history-row"><strong>${esc(h.label)}</strong><span>${h.correct}/${h.total} correct</span><span>${new Date(h.date).toLocaleString()}</span></div>`).join(''):'<p>No sessions yet. Complete a lesson and it will appear here.</p>';
+  function allSessions(){ return state.progress.history.length; }
+  function totalAnswers(){ return Object.values(state.progress.subject).reduce((n,s)=>n+(s.total||0),0); }
+  function totalCorrect(){ return Object.values(state.progress.subject).reduce((n,s)=>n+(s.correct||0),0); }
+  function totalMinutes(){ return Math.round(state.progress.history.reduce((n,h)=>n+((h.durationSec||0)/60),0)); }
+  function studyStreak(){
+    const set=new Set(state.progress.studyDates); let n=0; const d=new Date();
+    for(let i=0;i<365;i++){const k=todayKey(d); if(set.has(k)){n++; d.setDate(d.getDate()-1);} else if(i===0){d.setDate(d.getDate()-1);} else break;}
+    return n;
   }
-
-  function weakestStandards(){
-    return Object.keys(STANDARDS).sort((a,b)=>{
-      const A=data.standards[a],B=data.standards[b];
-      const scoreA=A.attempts?A.correct/A.attempts:0.45, scoreB=B.attempts?B.correct/B.attempts:0.45;
-      return scoreA-scoreB;
-    });
-  }
-  function renderParent(){
-    const weak=weakestStandards()[0]; const st=data.standards[weak]; const accuracy=pct(data.totals.correct,data.totals.attempts);
-    $('parentSummary').innerHTML=`<div class="section-heading"><div><p class="eyebrow">AT A GLANCE</p><h2>${esc(data.profile.name || 'Learner')}'s study summary</h2></div></div><div class="stats-grid"><div class="stat"><span class="stat-label">Questions answered</span><strong>${data.totals.attempts}</strong><small>Across all five standards</small></div><div class="stat"><span class="stat-label">Overall accuracy</span><strong>${data.totals.attempts?accuracy+'%':'—'}</strong><small>Use alongside the skill breakdown</small></div><div class="stat"><span class="stat-label">Review queue</span><strong>${data.mistakes.length}</strong><small>Questions to revisit</small></div></div><div class="source-note" style="margin-top:0"><strong>Suggested next focus: ${weak} — ${esc(STANDARDS[weak].title)}</strong><p>${st.attempts?`Current accuracy is ${pct(st.correct,st.attempts)}% across ${st.attempts} attempts.`:'This standard has not been practiced yet.'} Ms. Nova will automatically give it extra weight in mixed lessons.</p></div>`;
-  }
-
-  function normalizeAnswer(v){return String(v??'').trim().toLowerCase().replace(/,/g,'').replace(/\s+/g,' ').replace(/\s*r\s*/g,' r').replace(/r(\d+)/g,'r$1');}
-  function shuffled(arr){return [...arr].sort(()=>Math.random()-.5)}
-  function pickQuestions({mode='mixed',standard=null,count=12,reviewOnly=false}){
-    let pool=reviewOnly?BANK.filter(q=>data.mistakes.includes(q.id)):BANK;
-    if(standard) pool=pool.filter(q=>q.standard===standard);
-    const seenSet=new Set(data.seen.slice(-250));
-    let fresh=pool.filter(q=>!seenSet.has(q.id)); if(fresh.length<count) fresh=pool;
-    const targetStandards=mode==='mixed'?weakestStandards():standard?[standard]:Object.keys(STANDARDS);
-    const result=[];
-    let guard=0;
-    while(result.length<count && guard<5000){
-      guard++;
-      let candidates=fresh;
-      if(mode==='mixed'){
-        const weighted=targetStandards[Math.min(targetStandards.length-1,Math.floor(Math.pow(Math.random(),1.8)*targetStandards.length))];
-        const by=fresh.filter(q=>q.standard===weighted && !result.some(r=>r.id===q.id));
-        if(by.length)candidates=by;
-      } else candidates=fresh.filter(q=>!result.some(r=>r.id===q.id));
-      if(!candidates.length)break;
-      const q=candidates[Math.floor(Math.random()*candidates.length)];
-      if(!result.some(r=>r.id===q.id)) result.push(q);
+  async function pinHash(pin){
+    const value='nova-learning::'+String(pin);
+    if(window.crypto?.subtle){
+      const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
+      return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
     }
-    return result;
+    let h=2166136261; for(const ch of value){h^=ch.charCodeAt(0);h=Math.imul(h,16777619);} return 'f'+(h>>>0).toString(16);
   }
-
-  function startSession(opts){
-    const questions=pickQuestions(opts); if(!questions.length){alert('There are no review questions waiting right now.');return;}
-    session={questions,index:0,correct:0,answers:[],start:Date.now(),label:opts.reviewOnly?'Mistake review':opts.standard?`${opts.standard} practice`:'Daily mixed lesson'};
-    selectedChoice=null;
-    $('practiceOverlay').classList.remove('hidden'); document.body.style.overflow='hidden';
-    showQuestion();
-  }
-  function showQuestion(){
-    selectedChoice=null; const q=session.questions[session.index];
-    $('practiceSkill').textContent=q.skill; $('practiceCoach').textContent=coachLine(q);
-    $('questionStandard').textContent=q.standard; $('questionDifficulty').textContent=`Level ${q.difficulty}`;
-    $('questionPrompt').textContent=q.prompt; $('hintBox').classList.add('hidden'); $('feedbackBox').className='feedback-box hidden'; $('feedbackBox').innerHTML='';
-    $('checkBtn').classList.remove('hidden'); $('nextBtn').classList.add('hidden');
-    $('practiceCount').textContent=`${session.index+1} / ${session.questions.length}`;
-    $('practiceProgressFill').style.width=`${(session.index/session.questions.length)*100}%`;
-    $('readBtn').style.display=data.settings.speech?'inline-block':'none';
-    renderAnswer(q);
+  function toast(msg){ clearTimeout(toastTimer); els.toast.textContent=msg; els.toast.classList.remove('hidden'); toastTimer=setTimeout(()=>els.toast.classList.add('hidden'),1800); }
+  function setView(name){
+    currentView=name;
+    [els.home,els.subject,els.progress].forEach(v=>v.classList.add('hidden'));
+    document.getElementById(name+'View')?.classList.remove('hidden');
+    document.getElementById('navHome').classList.toggle('active',name==='home');
+    document.getElementById('navProgress').classList.toggle('active',name==='progress');
+    if(name==='home') renderHome(); if(name==='subject') renderSubject(); if(name==='progress') renderChildProgress();
     window.scrollTo({top:0,behavior:'smooth'});
   }
-  function coachLine(q){
-    if(q.standard==='5.NS.1') return 'Line up place values or rewrite the numbers in the same form.';
-    if(q.standard==='5.CA.1') return 'Estimate first, then check your quotient with multiplication.';
-    if(q.standard==='5.CA.2') return 'Ask what the remainder means in the real situation.';
-    return 'Sketch the prism or think in equal layers if that helps.';
-  }
-  function renderAnswer(q){
-    if(q.type==='mc'){
-      $('answerArea').innerHTML=q.choices.map(c=>`<button class="choice" data-choice="${encodeURIComponent(c)}">${esc(c)}</button>`).join('');
-      qsa('[data-choice]').forEach(b=>b.addEventListener('click',()=>{qsa('[data-choice]').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');selectedChoice=decodeURIComponent(b.dataset.choice);}));
+
+  /* ---------- authentication ---------- */
+  function renderAuth(){
+    els.shell.classList.add('hidden'); els.auth.classList.remove('hidden');
+    if(!state.setup){
+      els.auth.innerHTML=`
+      <div class="auth-card">
+        <div class="auth-copy">
+          <span class="kicker">NEW HOME LEARNING SPACE</span>
+          <h1>Meet Ms. Nova.</h1>
+          <p>A simple Grade 5 learning studio built around lessons, small knowledge checks and a parent-only progress dashboard. Start by creating the learner profile.</p>
+          <form id="setupForm" class="form-grid">
+            <div class="field"><label for="setupName">Learner name</label><input id="setupName" maxlength="24" autocomplete="given-name" placeholder="First name" required><small>This is the name Ms. Nova uses for greetings.</small></div>
+            <div class="pin-row">
+              <div class="field"><label for="learnerPin">Learner PIN (optional)</label><input id="learnerPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits"><small>Leave blank for one-tap learner sign in.</small></div>
+              <div class="field"><label for="parentPin">Parent PIN</label><input id="parentPin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="4–6 digits" required><small>Locks the parent dashboard and settings.</small></div>
+            </div>
+            <button class="primary-button wide" type="submit">Create learning profile</button>
+          </form>
+        </div>
+        <div class="auth-art"><img src="assets/ms-nova.png" alt="Ms. Nova, the Nova Learning Studio teacher mascot"><div class="art-label"><strong>Learn it. Try it. Explain it.</strong><p>Every module and lesson includes quick checks so progress comes from understanding, not just tapping through screens.</p></div></div>
+      </div>`;
+      document.getElementById('setupForm').addEventListener('submit',async e=>{
+        e.preventDefault(); const name=document.getElementById('setupName').value.trim(); const lp=document.getElementById('learnerPin').value.trim(); const pp=document.getElementById('parentPin').value.trim();
+        if(!name) return toast('Enter the learner name.'); if(lp && !/^\d{4,6}$/.test(lp)) return toast('Learner PIN must be 4–6 digits.'); if(!/^\d{4,6}$/.test(pp)) return toast('Parent PIN must be 4–6 digits.');
+        state.setup=true; state.learner.name=name; state.learner.pinHash=lp?await pinHash(lp):''; state.learner.createdAt=new Date().toISOString(); state.parent.pinHash=await pinHash(pp); saveState(); learnerUnlocked=true; enterApp();
+      });
     } else {
-      const ph=q.type==='numeric'?'Type your answer':'Example: 76 R5';
-      $('answerArea').innerHTML=`<input id="freeAnswer" class="answer-input" inputmode="${q.type==='numeric'?'decimal':'text'}" autocomplete="off" placeholder="${ph}" />`;
-      $('freeAnswer').focus();
+      const needsPin=!!state.learner.pinHash;
+      els.auth.innerHTML=`
+      <div class="auth-card">
+        <div class="auth-copy">
+          <span class="kicker">WELCOME BACK</span>
+          <h1>Hi, ${esc(state.learner.name)}.</h1>
+          <p>${needsPin?'Enter your learner PIN to pick up exactly where you left off.':'Your learning progress is ready on this device.'}</p>
+          <form id="loginForm" class="form-grid">
+            ${needsPin?'<div class="field"><label for="loginPin">Learner PIN</label><input id="loginPin" class="pin-input" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autocomplete="off" required></div>':''}
+            <button class="primary-button wide" type="submit">Continue as ${esc(state.learner.name)}</button>
+          </form>
+          <div class="auth-actions"><button id="authParent" class="secondary-button">Parent access</button><button id="changeProfile" class="link-button">Reset this device profile</button></div>
+        </div>
+        <div class="auth-art"><img src="assets/ms-nova.png" alt="Ms. Nova"><div class="art-label"><strong>Ready for another step?</strong><p>Your lessons, checks, quizzes and progress are stored locally on this device.</p></div></div>
+      </div>`;
+      document.getElementById('loginForm').addEventListener('submit',async e=>{
+        e.preventDefault(); if(needsPin){const entered=document.getElementById('loginPin').value; if(await pinHash(entered)!==state.learner.pinHash) return toast('That learner PIN is not correct.');}
+        learnerUnlocked=true; enterApp();
+      });
+      document.getElementById('authParent').onclick=()=>openParent();
+      document.getElementById('changeProfile').onclick=()=>{ if(confirm('Reset this local learner profile? This erases progress stored on this device.')){localStorage.removeItem(KEY);state=defaultState();renderAuth();} };
     }
   }
-  function checkAnswer(){
-    const q=session.questions[session.index];
-    const user=q.type==='mc'?selectedChoice:$('freeAnswer')?.value;
-    if(user===null || user===undefined || String(user).trim()===''){pulse($('answerArea'));return;}
-    const correct=normalizeAnswer(user)===normalizeAnswer(q.answer);
-    session.answers.push({id:q.id,standard:q.standard,correct}); if(correct) session.correct++;
-    data.totals.attempts++; if(correct)data.totals.correct++;
-    const st=data.standards[q.standard]; st.attempts++; if(correct)st.correct++; st.last=new Date().toISOString();
-    data.seen.push(q.id); if(data.seen.length>500)data.seen=data.seen.slice(-500);
-    if(correct) data.mistakes=data.mistakes.filter(id=>id!==q.id); else if(!data.mistakes.includes(q.id)) data.mistakes.push(q.id);
-    if(q.type==='mc') qsa('[data-choice]').forEach(b=>{const c=decodeURIComponent(b.dataset.choice); if(normalizeAnswer(c)===normalizeAnswer(q.answer))b.classList.add('correct'); else if(c===selectedChoice)b.classList.add('incorrect'); b.disabled=true;});
-    else $('freeAnswer').disabled=true;
-    $('feedbackBox').className=`feedback-box ${correct?'good':'retry'}`;
-    $('feedbackBox').innerHTML=`<strong>${correct?'Correct — explain it back to yourself.':'Not yet — use the worked reasoning.'}</strong><div>${esc(q.explanation)}</div>`;
-    $('checkBtn').classList.add('hidden'); $('nextBtn').classList.remove('hidden');
-    saveData();
+  function enterApp(){ els.auth.classList.add('hidden'); els.shell.classList.remove('hidden'); setView('home'); }
+  function signOut(){ learnerUnlocked=false; parentUnlocked=false; els.shell.classList.add('hidden'); renderAuth(); }
+
+  /* ---------- home / subjects ---------- */
+  function renderHome(){
+    const name=state.learner.name || 'Learner'; const overall=totalAnswers()?pct(totalCorrect(),totalAnswers()):0; const streak=studyStreak();
+    const completedToday=state.progress.history.filter(h=>todayKey(new Date(h.date))===todayKey()).length;
+    const subjectCards=SUBJECT_NAMES.map(subject=>{
+      const c=getSubjectConfig(subject), p=subjectProgress(subject), s=subjectStats(subject);
+      return `<button class="subject-card" data-subject="${esc(subject)}" style="--accent:${c.accent}">
+        <img src="${c.icon}" alt=""><div class="subject-body"><div class="subject-title-row"><h3>${esc(subject)}</h3><span class="progress-pill">${p?p+'%':'New'}</span></div><p>${esc(c.desc)}</p><div class="subject-meter"><i style="width:${p}%;background:${c.accent}"></i></div><div class="subject-footer"><span>${c.units.length} learning units</span><span>${s.total?pct(s.correct,s.total)+'% checks':'Start here'} →</span></div></div>
+      </button>`;
+    }).join('');
+    const focus=SCHOOL_FOCUS?`<div class="focus-card"><div><span class="kicker" style="color:#facc15">SCHOOL FOCUS</span><h3 style="margin:6px 0 0;font-size:22px">${esc(SCHOOL_FOCUS.title)}</h3><p>${esc(SCHOOL_FOCUS.subtitle)}</p><div class="tags">${SCHOOL_FOCUS.standards.map(s=>`<span class="tag">${esc(s)}</span>`).join('')}</div></div><button id="focusStart" class="primary-button">Start focus quiz</button></div>`:'';
+    els.home.innerHTML=`
+      <section class="hero">
+        <div class="hero-copy"><span class="kicker">YOUR HOME LEARNING DASHBOARD</span><h1>Hi, ${esc(name)}. What shall we learn today?</h1><p>Choose a subject, then decide whether you want to learn a concept, take a guided lesson, or test what you know.</p><div class="hero-actions"><button id="continueBtn" class="primary-button">Continue learning</button><button id="dailyMixBtn" class="secondary-button">Quick daily mix</button></div></div>
+        <div class="hero-image"><img src="assets/ms-nova.png" alt="Ms. Nova"></div><div class="speech-chip">“I’ll teach a little, check your understanding, and give you a hint whenever you need one.”</div>
+      </section>
+      <section class="today-strip"><div class="today-card"><div class="today-icon">✦</div><div><small>Today</small><strong>${completedToday?completedToday+' session'+(completedToday===1?'':'s')+' complete':'Ready when you are'}</strong><small>Parent goal: ${state.parent.weeklyGoal} learning days this week</small></div></div><div class="mini-stat"><span class="label">Learning streak</span><strong>${streak} day${streak===1?'':'s'}</strong><small>Regular practice matters more than perfect scores.</small></div><div class="mini-stat"><span class="label">Knowledge checks</span><strong>${totalAnswers().toLocaleString()}</strong><small>${totalAnswers()?overall+'% correct overall':'Build your first results'}</small></div><div class="mini-stat"><span class="label">Question library</span><strong>${BANK.length.toLocaleString()}+</strong><small>Across Grade 5 subjects and enrichment.</small></div></section>
+      <div class="section-head"><div><span class="eyebrow">CHOOSE A SUBJECT</span><h2>Your learning library</h2><p>Big buttons, simple choices, no teams and no leaderboards.</p></div></div>
+      <section class="subject-grid">${subjectCards}</section>${focus}`;
+    els.home.querySelectorAll('[data-subject]').forEach(b=>b.onclick=()=>{currentSubject=b.dataset.subject;currentMode=null;setView('subject');});
+    document.getElementById('continueBtn').onclick=()=>continueLearning();
+    document.getElementById('dailyMixBtn').onclick=()=>startDailyMix();
+    if(document.getElementById('focusStart')) document.getElementById('focusStart').onclick=()=>startFocusQuiz();
   }
-  function nextQuestion(){
-    session.index++;
-    if(session.index>=session.questions.length){finishSession();return;}
-    showQuestion();
+  function continueLearning(){
+    const last=state.progress.history[0];
+    if(last && SUBJECTS[last.subject]){ currentSubject=last.subject; currentMode=last.mode==='quiz'?'lesson':last.mode; setView('subject'); }
+    else { currentSubject='Mathematics'; currentMode='module'; setView('subject'); }
+  }
+  function renderSubject(){
+    const subject=currentSubject, cfg=getSubjectConfig(subject), mode=currentMode;
+    const activities=[
+      {mode:'module',icon:'✦',title:'Learning module',text:'A short visual concept tour with two knowledge checks and hints.',time:'6–10 minutes'},
+      {mode:'lesson',icon:'▣',title:'Guided lesson',text:'Teach, example, guided checks and a small independent challenge.',time:'12–20 minutes'},
+      {mode:'quiz',icon:'✓',title:'Quiz / test',text:'Ten questions to see what you know. No hints and results at the end.',time:'8–15 minutes'}
+    ];
+    const units=cfg.units.map((u,i)=>{
+      const p=unitProgress(subject,u.id), done=(p.module||0)+(p.lesson||0)+(p.quiz||0); const status=done?`${done} completed`:'New';
+      return `<button class="unit-card" data-unit="${u.id}" ${mode?'':'disabled'} style="${mode?'':'opacity:.55;cursor:not-allowed'}"><span class="unit-number" style="background:${cfg.tint};color:${cfg.accent}">${i+1}</span><span><h4>${esc(u.title)}</h4><p>${esc(u.summary)}</p></span><span class="unit-status">${status}${mode?' →':''}</span></button>`;
+    }).join('');
+    els.subject.innerHTML=`
+      <div class="back-row"><button id="backHome" class="back-button">← Home</button></div>
+      <section class="subject-hero" style="background:linear-gradient(135deg,#fff,${cfg.tint})"><div><span class="eyebrow" style="color:${cfg.accent}">GRADE 5 SUBJECT</span><h1>${esc(subject)}</h1><p>${esc(cfg.desc)}</p><small class="muted"><b>Curriculum basis:</b> ${esc(cfg.standardsNote)}</small></div><img src="${cfg.icon}" alt=""></section>
+      <div class="section-head"><div><span class="eyebrow" style="color:${cfg.accent}">STEP 1</span><h2>Choose an activity</h2><p>Pick how you want to work before choosing a topic.</p></div></div>
+      <section class="activity-grid">${activities.map(a=>`<button class="activity-card" data-mode="${a.mode}" style="${mode===a.mode?`box-shadow:0 0 0 3px ${cfg.accent}33,var(--soft);background:${cfg.tint}`:''}"><span class="activity-icon">${a.icon}</span><h3>${a.title}</h3><p>${a.text}</p><small>${a.time}</small></button>`).join('')}</section>
+      ${mode?`<div class="mode-banner"><div><strong>${modeIcon(mode)} ${modeLabel(mode)} selected</strong><br><span>Now choose what ${state.learner.name||'the learner'} wants to work on.</span></div><button id="changeMode" class="secondary-button">Change</button></div>`:''}
+      <div class="section-head"><div><span class="eyebrow" style="color:${cfg.accent}">STEP 2</span><h2>Choose a learning unit</h2><p>${mode?'Each unit follows the same simple flow.':'Choose an activity above first.'}</p></div></div>
+      <section class="unit-grid">${units}</section>`;
+    document.getElementById('backHome').onclick=()=>setView('home');
+    els.subject.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{currentMode=b.dataset.mode;renderSubject();});
+    if(document.getElementById('changeMode')) document.getElementById('changeMode').onclick=()=>{currentMode=null;renderSubject();};
+    if(mode) els.subject.querySelectorAll('[data-unit]').forEach(b=>b.onclick=()=>startUnit(subject,b.dataset.unit,mode));
+  }
+
+  /* ---------- question selection ---------- */
+  function questionsForUnit(subject,unit,count){
+    let pool=BANK.filter(q=>q.subject===subject && (!unit.strands?.length || unit.strands.includes(q.strand)));
+    if(!pool.length) pool=BANK.filter(q=>q.subject===subject);
+    const wrong=new Set(state.progress.wrong); const weak=pool.filter(q=>{const s=strandStats(subject,q.strand);return s.total>=3 && pct(s.correct,s.total)<70;});
+    const preferred=[...shuffle(pool.filter(q=>wrong.has(q.id))),...shuffle(weak),...shuffle(pool)]; const result=[];
+    for(const q of preferred){if(result.length>=count)break;if(!result.some(x=>x.id===q.id))result.push(q);}
+    return result;
+  }
+  function questionsByStandards(subject,standards,count){
+    let pool=BANK.filter(q=>q.subject===subject && standards.includes(q.standard)); if(!pool.length)pool=BANK.filter(q=>q.subject===subject); return shuffle(pool).slice(0,count);
+  }
+
+  /* ---------- learning session ---------- */
+  function startUnit(subject,unitId,mode){
+    const cfg=getSubjectConfig(subject), unit=cfg.units.find(u=>u.id===unitId); if(!unit)return;
+    const qCount=mode==='module'?2:mode==='lesson'?4:10, qs=questionsForUnit(subject,unit,qCount);
+    const steps=[];
+    if(mode==='module'){
+      steps.push({type:'info',title:unit.title,kicker:'Big idea',body:unit.summary,idea:unit.teach[0],example:null});
+      steps.push({type:'info',title:'How it works',kicker:'Learn',body:unit.teach[1]||unit.teach[0],idea:unit.teach[2]||'',example:unit.example});
+      if(qs[0])steps.push({type:'question',q:qs[0],showFeedback:true,hints:true,label:'Knowledge check'});
+      steps.push({type:'info',title:'One more step',kicker:'Connect it',body:unit.teach[2]||unit.summary,idea:'Try to explain the idea in your own words. Explaining is a powerful check of understanding.',example:unit.challenge});
+      if(qs[1])steps.push({type:'question',q:qs[1],showFeedback:true,hints:true,label:'Knowledge check'});
+      steps.push({type:'recap',title:'Module complete',body:`You explored ${unit.title} and checked your understanding along the way.`});
+    } else if(mode==='lesson'){
+      steps.push({type:'info',title:unit.title,kicker:'Lesson start',body:unit.summary,idea:'Before we begin, think about what you already know about this topic.',example:null});
+      if(qs[0])steps.push({type:'question',q:qs[0],showFeedback:true,hints:true,label:'Warm-up check'});
+      steps.push({type:'info',title:'Teach it clearly',kicker:'Learn',body:unit.teach[0],idea:unit.teach[1]||'',example:unit.example});
+      if(qs[1])steps.push({type:'question',q:qs[1],showFeedback:true,hints:true,label:'Knowledge check'});
+      steps.push({type:'info',title:'Build the idea',kicker:'Go deeper',body:unit.teach[2]||unit.teach[1]||unit.summary,idea:'Use the example as a model, but explain the reasoning—not only the final answer.',example:unit.challenge});
+      if(qs[2])steps.push({type:'question',q:qs[2],showFeedback:true,hints:true,label:'Guided check'});
+      if(qs[3])steps.push({type:'question',q:qs[3],showFeedback:true,hints:true,label:'Independent check'});
+      steps.push({type:'recap',title:'Lesson complete',body:`You learned, practised and explained ${unit.title}. Your checks are now in your progress dashboard.`});
+    } else {
+      qs.forEach((q,i)=>steps.push({type:'question',q,showFeedback:false,hints:false,label:`Question ${i+1}`}));
+      steps.push({type:'recap',title:'Test complete',body:'Your result is ready.'});
+    }
+    session={subject,unit,mode,steps,index:0,answers:[],started:Date.now(),finished:false};
+    const style=getSubjectConfig(subject); els.session.style.setProperty('--session-accent',style.accent);els.session.style.setProperty('--session-tint',style.tint);els.session.classList.remove('hidden');renderSessionStep();
+  }
+  function startFocusQuiz(){
+    const standards=SCHOOL_FOCUS?.standards||[]; const qs=questionsByStandards('Mathematics',standards,12); const unit={id:'school-focus',title:'Current School Math Focus',summary:'A mixed check of the standards in the supplied school practice.',teach:[],example:'',challenge:'',standards:standards.join(' · '),strands:[]};
+    session={subject:'Mathematics',unit,mode:'quiz',steps:[...qs.map((q,i)=>({type:'question',q,showFeedback:false,hints:false,label:`Question ${i+1}`})),{type:'recap',title:'Focus check complete',body:'Your current-school-focus result is ready.'}],index:0,answers:[],started:Date.now(),finished:false};
+    const style=getSubjectConfig('Mathematics');els.session.style.setProperty('--session-accent',style.accent);els.session.style.setProperty('--session-tint',style.tint);els.session.classList.remove('hidden');renderSessionStep();
+  }
+  function startDailyMix(){
+    const subjects=['Mathematics','English Language Arts','Science','Social Studies']; const qs=[];
+    for(const s of subjects){ const cfg=getSubjectConfig(s); const u=cfg.units[Math.floor(Math.random()*cfg.units.length)]; qs.push(...questionsForUnit(s,u,2)); }
+    const mixedUnit={id:'daily-mix',title:'Daily Mix',summary:'A short mixed-subject check.',teach:[],example:'',challenge:'',standards:'Grade 5 mixed review',strands:[]};
+    session={subject:'Mixed',unit:mixedUnit,mode:'quiz',steps:[...shuffle(qs).slice(0,8).map((q,i)=>({type:'question',q,showFeedback:false,hints:false,label:`Question ${i+1}`})),{type:'recap',title:'Daily mix complete',body:'Nice work across several subjects.'}],index:0,answers:[],started:Date.now(),finished:false};
+    els.session.style.setProperty('--session-accent','#6c5ce7');els.session.style.setProperty('--session-tint','#f0efff');els.session.classList.remove('hidden');renderSessionStep();
+  }
+  function renderSessionStep(){
+    if(!session)return; const step=session.steps[session.index]; const total=session.steps.length; els.sessionFill.style.width=`${Math.round((session.index/Math.max(1,total-1))*100)}%`; els.sessionCount.textContent=`${Math.min(session.index+1,total)} / ${total}`;
+    if(step.type==='info') renderInfoStep(step); else if(step.type==='question') renderQuestionStep(step); else renderRecapStep(step);
+  }
+  function coachHeader(kicker,title){ return `<div class="coach-row"><div class="coach-avatar"><img src="assets/ms-nova.png" alt="Ms. Nova"></div><div class="coach-copy"><small>${esc(kicker)}</small><h2>${esc(title)}</h2></div></div>`; }
+  function renderInfoStep(step){
+    els.sessionStage.innerHTML=`<article class="lesson-card">${coachHeader(step.kicker,step.title)}<div class="lesson-content"><p>${esc(step.body)}</p>${step.idea?`<div class="big-idea"><strong>Key idea</strong>${esc(step.idea)}</div>`:''}${step.example?`<div class="example-box"><small>${step.kicker==='Connect it'?'TRY THIS':'WORKED / CONCRETE EXAMPLE'}</small><p>${esc(step.example)}</p></div>`:''}<div class="lesson-next">${state.settings.speech?'<button id="readStep" class="secondary-button">🔊 Read aloud</button>':''}<button id="nextStep" class="primary-button">Continue →</button></div></div></article>`;
+    if(document.getElementById('readStep')) document.getElementById('readStep').onclick=()=>speak(`${step.title}. ${step.body}. ${step.idea||''}. ${step.example||''}`);
+    document.getElementById('nextStep').onclick=nextSessionStep;
+  }
+  function renderQuestionStep(step){
+    const q=step.q, prior=session.answers.find(a=>a.step===session.index); const passage=q.passage?`<div class="passage"><b>Read this:</b><br>${esc(q.passage)}</div>`:'';
+    let answers=''; if(q.type==='mc'&&Array.isArray(q.choices)) answers=`<div class="choices">${shuffle(q.choices).map(c=>`<button class="choice" data-choice="${encodeURIComponent(c)}">${esc(c)}</button>`).join('')}</div>`; else answers=`<input id="textAnswer" class="answer-input" autocomplete="off" inputmode="${q.type==='numeric'?'decimal':'text'}" placeholder="Type your answer">`;
+    els.sessionStage.innerHTML=`<article class="lesson-card check-card">${coachHeader(step.label||'Knowledge check',session.mode==='quiz'?'Show what you know':'Quick knowledge check')}<div class="lesson-content">${passage}<div class="check-prompt">${esc(q.prompt)}</div>${answers}<div class="check-actions">${step.hints&&state.settings.hints?'<button id="hintBtn" class="secondary-button">Hint</button>':''}${state.settings.speech?'<button id="readQuestion" class="secondary-button">🔊 Read aloud</button>':''}<button id="submitAnswer" class="primary-button">${session.mode==='quiz'?'Save answer':'Check answer'}</button></div><div id="hintPanel" class="hint-panel hidden"></div><div id="feedbackPanel" class="feedback-panel hidden"></div></div></article>`;
+    let selected='';
+    els.sessionStage.querySelectorAll('.choice').forEach(b=>b.onclick=()=>{if(prior)return;els.sessionStage.querySelectorAll('.choice').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');selected=decodeURIComponent(b.dataset.choice);});
+    if(document.getElementById('hintBtn')) document.getElementById('hintBtn').onclick=()=>{const h=document.getElementById('hintPanel');h.textContent=q.hint||'Slow down, identify what the question is asking, and eliminate answers that do not fit.';h.classList.remove('hidden');};
+    if(document.getElementById('readQuestion')) document.getElementById('readQuestion').onclick=()=>speak(`${q.passage||''}. ${q.prompt}`);
+    document.getElementById('submitAnswer').onclick=()=>{
+      if(session.answers.some(a=>a.step===session.index)) return nextSessionStep();
+      const value=q.type==='mc'?selected:(document.getElementById('textAnswer')?.value||'').trim(); if(!value)return toast('Choose or enter an answer first.');
+      const correct=normalize(value)===normalize(q.answer); session.answers.push({step:session.index,qid:q.id,subject:q.subject,correct,given:value,answer:q.answer}); recordAnswer(q,correct);
+      const submit=document.getElementById('submitAnswer');
+      if(step.showFeedback){
+        els.sessionStage.querySelectorAll('.choice').forEach(b=>{const v=decodeURIComponent(b.dataset.choice);b.disabled=true;if(normalize(v)===normalize(q.answer))b.classList.add('correct');if(b.classList.contains('selected')&&!correct)b.classList.add('wrong');});
+        const fb=document.getElementById('feedbackPanel');fb.className='feedback-panel '+(correct?'good':'bad');fb.innerHTML=`<strong>${correct?'Correct — good reasoning.':'Not quite yet.'}</strong><br>${esc(q.explanation||'Review the key idea and try a similar question next time.')}${!correct?`<br><b>Answer:</b> ${esc(q.answer)}`:''}`;fb.classList.remove('hidden');submit.textContent='Continue →';
+      } else { submit.textContent='Next →'; toast('Answer saved'); }
+    };
+  }
+  function renderRecapStep(step){
+    if(!session.finished) finishSession(); const answers=session.answers, correct=answers.filter(a=>a.correct).length, total=answers.length, score=pct(correct,total); const isQuiz=session.mode==='quiz'; const message=isQuiz?(score>=90?'Excellent result.':score>=70?'Good result — review the missed ideas next.':'This test found useful areas to revisit.'):'You worked through teaching and knowledge checks, not just a score.';
+    const review=isQuiz?answers.map((a,i)=>`<div class="review-row"><b>${a.correct?'✓':'•'}</b><span>${a.correct?'Correct':`Review: ${esc(a.answer)}`}</span></div>`).join(''):'';
+    els.sessionStage.innerHTML=`<article class="lesson-card"><div class="quiz-summary"><div class="score-orb">${total?score+'%':'✓'}</div><span class="eyebrow">${esc(modeLabel(session.mode))}</span><h1>${esc(step.title)}</h1><p>${esc(message)}</p>${isQuiz?`<p><b>${correct} of ${total}</b> knowledge checks correct.</p><div class="quiz-review">${review}</div>`:`<div class="big-idea"><strong>What happens next</strong>${esc(step.body)}</div>`}<div class="hero-actions" style="justify-content:center"><button id="sessionHome" class="primary-button">Back to learning</button>${session.subject!=='Mixed'&&session.unit.id!=='school-focus'?'<button id="repeatUnit" class="secondary-button">Try another activity</button>':''}</div></div></article>`;
+    document.getElementById('sessionHome').onclick=closeSession;
+    if(document.getElementById('repeatUnit')) document.getElementById('repeatUnit').onclick=()=>{const s=session.subject;closeSession();currentSubject=s;currentMode=null;setView('subject');};
+  }
+  function nextSessionStep(){ if(!session)return; if(session.index<session.steps.length-1){session.index++;renderSessionStep();} }
+  function normalize(v){ return String(v??'').trim().toLowerCase().replace(/,/g,'').replace(/\s+/g,' ').replace(/[.$]/g,''); }
+  function recordAnswer(q,correct){
+    const subject=q.subject||session.subject, strand=q.strand||'General';
+    state.progress.subject[subject] ||= {correct:0,total:0,sessions:0}; state.progress.subject[subject].total++; if(correct)state.progress.subject[subject].correct++;
+    const sk=subject+'::'+strand; state.progress.strand[sk] ||= {correct:0,total:0}; state.progress.strand[sk].total++; if(correct)state.progress.strand[sk].correct++;
+    state.progress.question[q.id] ||= {correct:0,total:0}; state.progress.question[q.id].total++; if(correct)state.progress.question[q.id].correct++;
+    if(correct) state.progress.wrong=state.progress.wrong.filter(id=>id!==q.id); else if(!state.progress.wrong.includes(q.id)) state.progress.wrong.push(q.id);
+    state.progress.wrong=state.progress.wrong.slice(-400); saveState();
   }
   function finishSession(){
-    updateStreak(); const total=session.questions.length; const duration=Math.max(1,Math.round((Date.now()-session.start)/60000));
-    data.history.unshift({date:new Date().toISOString(),label:session.label,correct:session.correct,total,minutes:duration}); data.history=data.history.slice(0,40); saveData();
-    $('practiceOverlay').classList.add('hidden'); $('resultsOverlay').classList.remove('hidden');
-    const accuracy=pct(session.correct,total); $('resultsTitle').textContent=accuracy>=85?'Strong session.':accuracy>=65?'Good progress.':'Useful practice — now we know what to revisit.';
-    $('resultsSummary').textContent=`You answered ${session.correct} of ${total} correctly. The app has updated your next mixed lesson to give weaker skills more attention.`;
-    $('resultsBreakdown').innerHTML=`<div><strong>${session.correct}/${total}</strong><small>Correct</small></div><div><strong>${accuracy}%</strong><small>Accuracy</small></div><div><strong>${duration} min</strong><small>Study time</small></div>`;
-    $('reviewMistakes').disabled=data.mistakes.length===0; $('reviewMistakes').textContent=data.mistakes.length?`Review mistakes (${data.mistakes.length})`:'No mistakes waiting';
-    renderAll();
+    if(!session||session.finished)return;session.finished=true; const correct=session.answers.filter(a=>a.correct).length,total=session.answers.length,durationSec=Math.max(20,Math.round((Date.now()-session.started)/1000));
+    if(session.subject!=='Mixed'){
+      const up=unitProgress(session.subject,session.unit.id); up[session.mode]=(up[session.mode]||0)+1; up.last=new Date().toISOString(); state.progress.unit[unitKey(session.subject,session.unit.id)]=up;
+      state.progress.subject[session.subject] ||= {correct:0,total:0,sessions:0}; state.progress.subject[session.subject].sessions=(state.progress.subject[session.subject].sessions||0)+1;
+    }
+    state.progress.history.unshift({date:new Date().toISOString(),subject:session.subject,unitId:session.unit.id,unitTitle:session.unit.title,mode:session.mode,correct,total,durationSec}); state.progress.history=state.progress.history.slice(0,250);
+    const tk=todayKey(); if(!state.progress.studyDates.includes(tk)) state.progress.studyDates.push(tk); state.progress.studyDates=state.progress.studyDates.slice(-400); saveState();
   }
-  function exitPractice(){
-    if(session && session.index>0 && !confirm('Exit this lesson? Completed answers will stay saved, but this session summary will not be added.')) return;
-    $('practiceOverlay').classList.add('hidden'); document.body.style.overflow=''; session=null;
+  function closeSession(){ if(!session)return; if(!session.finished && session.answers.length && !confirm('Leave this session? Your completed checks are saved, but the activity will not be marked complete.'))return; els.session.classList.add('hidden');session=null; if(currentView==='home')renderHome(); else if(currentView==='progress')renderChildProgress(); else renderSubject(); }
+  function speak(text){ if(!('speechSynthesis'in window))return toast('Read aloud is not available on this device.'); speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text);u.rate=.94;speechSynthesis.speak(u); }
+
+  /* ---------- child progress ---------- */
+  function renderChildProgress(){
+    const sessions=allSessions(),answers=totalAnswers(),accuracy=answers?pct(totalCorrect(),answers):0,streak=studyStreak();
+    const cards=SUBJECT_NAMES.map(s=>{const c=getSubjectConfig(s),p=subjectProgress(s),st=subjectStats(s);return `<div class="progress-subject"><div class="row"><div><h3>${esc(s)}</h3><small>${st.total?st.total+' checks completed':'Not started yet'}</small></div><b style="color:${c.accent}">${p}%</b></div><div class="bar"><i style="width:${p}%;background:${c.accent}"></i></div></div>`}).join('');
+    const recent=state.progress.history.slice(0,8).map(h=>`<div class="recent-item"><div><strong>${esc(h.unitTitle)}</strong><small>${esc(h.subject)} · ${modeLabel(h.mode)} · ${dateLabel(h.date)}</small></div><span class="score-chip">${h.total?pct(h.correct,h.total)+'%':'Done'}</span></div>`).join('')||'<p class="muted">Complete a lesson or quiz and it will appear here.</p>';
+    els.progress.innerHTML=`<section class="progress-hero"><span class="kicker" style="color:#facc15">MY LEARNING</span><h1>${esc(state.learner.name)}’s progress</h1><p>This page keeps the learner view simple: subjects practised, recent work and steady progress.</p><div class="star-row">${Array.from({length:Math.min(8,Math.max(1,sessions))},()=>'<span class="star">★</span>').join('')}</div></section><section class="today-strip"><div class="mini-stat"><span class="label">Sessions</span><strong>${sessions}</strong><small>Learning modules, lessons and quizzes.</small></div><div class="mini-stat"><span class="label">Overall accuracy</span><strong>${answers?accuracy+'%':'—'}</strong><small>${answers.toLocaleString()} knowledge checks.</small></div><div class="mini-stat"><span class="label">Streak</span><strong>${streak} day${streak===1?'':'s'}</strong><small>Keep it steady, not stressful.</small></div><div class="mini-stat"><span class="label">Study time</span><strong>${totalMinutes()} min</strong><small>Approximate active session time.</small></div></section><div class="section-head"><div><span class="eyebrow">SUBJECTS</span><h2>How each area is going</h2></div></div><section class="progress-subjects">${cards}</section><div class="section-head"><div><span class="eyebrow">RECENT</span><h2>Latest learning</h2></div></div><section class="recent-list">${recent}</section>`;
   }
 
-  function pulse(el){el.animate([{transform:'translateX(0)'},{transform:'translateX(-6px)'},{transform:'translateX(6px)'},{transform:'translateX(0)'}],{duration:240});}
-  function speakCurrent(){
-    if(!('speechSynthesis' in window))return; speechSynthesis.cancel(); const q=session.questions[session.index]; const u=new SpeechSynthesisUtterance(q.prompt); u.rate=.94; speechSynthesis.speak(u);
+  /* ---------- parent dashboard ---------- */
+  function openParent(){ parentUnlocked=false; els.parent.classList.remove('hidden');els.parentDash.classList.add('hidden');els.parentGate.classList.remove('hidden');renderParentGate(); }
+  function closeParent(){ els.parent.classList.add('hidden');parentUnlocked=false; }
+  function renderParentGate(){
+    els.parentGate.innerHTML=`<div class="gate-head"><div><span class="kicker">PARENT / HOME EDUCATOR</span><h2>Parent dashboard</h2></div><button id="closeParentGate" class="round-button">✕</button></div><p>Enter the parent PIN created during setup. This lock is designed to keep settings and reports out of the learner’s normal flow.</p><form id="parentPinForm" class="form-grid"><div class="field"><label for="parentPinLogin">Parent PIN</label><input id="parentPinLogin" class="pin-input" inputmode="numeric" maxlength="6" autocomplete="off" required></div><button class="primary-button wide" type="submit">Open dashboard</button></form>`;
+    document.getElementById('closeParentGate').onclick=closeParent; document.getElementById('parentPinForm').onsubmit=async e=>{e.preventDefault();const p=document.getElementById('parentPinLogin').value;if(await pinHash(p)!==state.parent.pinHash)return toast('Parent PIN is not correct.');parentUnlocked=true;els.parentGate.classList.add('hidden');els.parentDash.classList.remove('hidden');renderParentDashboard('overview');};
   }
-  function setupScratchpad(){
-    const canvas=$('scratchCanvas'),ctx=canvas.getContext('2d'); let drawing=false,last=null;
-    function point(e){const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:(t.clientX-r.left)*(canvas.width/r.width),y:(t.clientY-r.top)*(canvas.height/r.height)}}
-    function down(e){drawing=true;last=point(e);e.preventDefault()} function move(e){if(!drawing)return;const p=point(e);ctx.strokeStyle='#173658';ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;e.preventDefault()} function up(){drawing=false;last=null}
-    canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);window.addEventListener('pointerup',up);
-    $('clearScratch').addEventListener('click',()=>ctx.clearRect(0,0,canvas.width,canvas.height));
+  function renderParentDashboard(tab='overview'){
+    const tabs=[['overview','Overview'],['curriculum','Curriculum'],['resources','Teaching resources'],['settings','Settings'],['data','Data']];
+    els.parentDash.innerHTML=`<header class="parent-head"><div><small>PARENT / HOME EDUCATOR</small><h1>${esc(state.learner.name)}’s learning dashboard</h1></div><button id="closeParent" class="round-button light">✕</button></header><nav class="parent-tabs">${tabs.map(([id,label])=>`<button data-tab="${id}" class="parent-tab ${tab===id?'active':''}">${label}</button>`).join('')}</nav><main class="parent-body" id="parentBody"></main>`;
+    document.getElementById('closeParent').onclick=closeParent; els.parentDash.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>renderParentDashboard(b.dataset.tab)); const body=document.getElementById('parentBody');
+    if(tab==='overview') body.innerHTML=parentOverviewHTML();
+    if(tab==='curriculum') body.innerHTML=parentCurriculumHTML();
+    if(tab==='resources') body.innerHTML=parentResourcesHTML();
+    if(tab==='settings'){body.innerHTML=parentSettingsHTML();wireParentSettings();}
+    if(tab==='data'){body.innerHTML=parentDataHTML();wireParentData();}
   }
+  function parentOverviewHTML(){
+    const answers=totalAnswers(),accuracy=answers?pct(totalCorrect(),answers):0; const week=weekData(); const max=Math.max(1,...week.map(d=>d.minutes));
+    const bars=week.map(d=>`<div class="day-col"><div class="day-bar"><i style="height:${Math.max(3,Math.round(d.minutes/max*100))}%"></i></div><small>${d.label}<br>${d.minutes}m</small></div>`).join('');
+    const subjectRows=SUBJECT_NAMES.map(s=>{const st=subjectStats(s),c=getSubjectConfig(s),p=subjectProgress(s);return `<div class="admin-subject-row"><div><strong>${esc(s)}</strong><br><small>${st.total?pct(st.correct,st.total)+'% accuracy · '+st.total+' checks':'No checks yet'}</small><div class="bar"><i style="width:${p}%;background:${c.accent}"></i></div></div><b>${p}%</b></div>`}).join('');
+    const weak=weakestStrands().slice(0,5); const weakHTML=weak.length?weak.map(x=>`<div class="weak-item"><strong>${esc(x.strand)}</strong><br><small>${esc(x.subject)} · ${x.accuracy}% across ${x.total} checks</small></div>`).join(''):'<p class="muted">There is not enough attempt data yet to identify a reliable weak area.</p>';
+    return `<section class="admin-stats"><div class="admin-stat"><span>Sessions</span><strong>${allSessions()}</strong></div><div class="admin-stat"><span>Knowledge checks</span><strong>${answers.toLocaleString()}</strong></div><div class="admin-stat"><span>Overall accuracy</span><strong>${answers?accuracy+'%':'—'}</strong></div><div class="admin-stat"><span>Study time</span><strong>${totalMinutes()}m</strong></div></section><section class="dashboard-grid"><div class="admin-card"><h3>Last 7 days</h3><div class="week-chart">${bars}</div></div><div class="admin-card"><h3>Suggested next focus</h3><div class="weak-list">${weakHTML}</div></div></section><section class="dashboard-grid"><div class="admin-card"><h3>Subject progress</h3>${subjectRows}</div><div class="admin-card"><h3>How to read this</h3><p class="muted">Accuracy is one signal, not the whole picture. The dashboard also records completed modules, lessons, quizzes, study days and repeated weak strands. A short re-teaching lesson is usually a better response to a weak strand than simply giving a longer test.</p><p class="muted"><b>Current weekly goal:</b> ${state.parent.weeklyGoal} learning days.</p></div></section>`;
+  }
+  function weekData(){
+    const out=[]; for(let i=6;i>=0;i--){const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-i);const key=todayKey(d);const seconds=state.progress.history.filter(h=>todayKey(new Date(h.date))===key).reduce((n,h)=>n+(h.durationSec||0),0);out.push({key,label:d.toLocaleDateString(undefined,{weekday:'short'}),minutes:Math.round(seconds/60)});} return out;
+  }
+  function weakestStrands(){
+    const arr=[]; for(const [key,s] of Object.entries(state.progress.strand)){if((s.total||0)<3)continue; const split=key.indexOf('::'),subject=key.slice(0,split),strand=key.slice(split+2);arr.push({subject,strand,total:s.total,accuracy:pct(s.correct,s.total)});} return arr.sort((a,b)=>a.accuracy-b.accuracy||b.total-a.total);
+  }
+  function parentCurriculumHTML(){
+    const blocks=SUBJECT_NAMES.map(s=>{const cfg=getSubjectConfig(s);return `<details class="curriculum-subject"><summary>${esc(s)} — ${cfg.units.length} units</summary><div class="curriculum-units"><p class="muted" style="font-size:12px">${esc(cfg.standardsNote)}</p>${cfg.units.map(u=>{const p=unitProgress(s,u.id),count=(p.module||0)+(p.lesson||0)+(p.quiz||0);return `<div class="curriculum-unit"><span><b>${esc(u.title)}</b><br><small class="muted">${esc(u.standards)}</small></span><span>${count?count+' completed':'Not started'}</span></div>`}).join('')}</div></details>`}).join('');
+    return `<div class="admin-card"><h3>Grade 5 learning map</h3><p class="muted">Core subjects follow Indiana Grade 5 standards and the supplied ILEARN-style math focus. Health and Creative Arts are additional home-learning enrichment. Learning modules and lessons use short knowledge checks with hints; quizzes do not show hints.</p><div class="curriculum-table">${blocks}</div></div>`;
+  }
+  function parentResourcesHTML(){
+    return `<div class="admin-card"><h3>Teaching-resource foundation</h3><p class="muted">The app’s lessons and questions are original. These public educator resources were used to structure standards coverage and lesson approaches; the app does not copy their lesson text.</p><div class="resource-list">${RESOURCES.map(r=>`<div class="resource-item"><strong>${esc(r.title)}</strong><p>${esc(r.subject)} — ${esc(r.note)}</p><a href="${esc(r.url)}" target="_blank" rel="noopener">Open source resource ↗</a></div>`).join('')}</div></div>`;
+  }
+  function parentSettingsHTML(){
+    return `<div class="admin-card"><h3>Learner & home-learning settings</h3><form id="parentSettingsForm" class="form-grid"><div class="settings-grid"><div class="field"><label for="adminName">Learner name</label><input id="adminName" maxlength="24" value="${esc(state.learner.name)}"></div><div class="field"><label for="weeklyGoal">Weekly learning-day goal</label><select id="weeklyGoal">${[3,4,5,6,7].map(n=>`<option value="${n}" ${n===Number(state.parent.weeklyGoal)?'selected':''}>${n} days</option>`).join('')}</select></div><div class="field"><label for="sessionLength">Typical lesson length</label><select id="sessionLength">${[10,15,20,25,30].map(n=>`<option value="${n}" ${n===Number(state.parent.sessionLength)?'selected':''}>${n} minutes</option>`).join('')}</select></div><div class="field"><label for="newLearnerPin">New learner PIN</label><input id="newLearnerPin" inputmode="numeric" maxlength="6" placeholder="Leave blank to keep current"><small>Use 0000 to remove the learner PIN.</small></div></div><label class="toggle-line"><span><b>Read-aloud buttons</b><br><small class="muted">Show device voice controls during learning.</small></span><input id="speechSetting" type="checkbox" ${state.settings.speech?'checked':''}></label><label class="toggle-line"><span><b>Hints during learning checks</b><br><small class="muted">Hints are never shown in quiz/test mode.</small></span><input id="hintSetting" type="checkbox" ${state.settings.hints?'checked':''}></label><button class="primary-button" type="submit">Save settings</button></form><hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h3>Change parent PIN</h3><form id="parentPinChange" class="form-grid"><div class="pin-row"><div class="field"><label for="newParentPin">New parent PIN</label><input id="newParentPin" inputmode="numeric" maxlength="6" placeholder="4–6 digits" required></div><div class="field"><label for="confirmParentPin">Confirm PIN</label><input id="confirmParentPin" inputmode="numeric" maxlength="6" placeholder="Repeat" required></div></div><button class="secondary-button" type="submit">Change parent PIN</button></form></div>`;
+  }
+  function wireParentSettings(){
+    document.getElementById('parentSettingsForm').onsubmit=async e=>{e.preventDefault();const name=document.getElementById('adminName').value.trim();if(!name)return toast('Learner name cannot be blank.');state.learner.name=name;state.parent.weeklyGoal=Number(document.getElementById('weeklyGoal').value);state.parent.sessionLength=Number(document.getElementById('sessionLength').value);state.settings.speech=document.getElementById('speechSetting').checked;state.settings.hints=document.getElementById('hintSetting').checked;const lp=document.getElementById('newLearnerPin').value.trim();if(lp){if(lp==='0000')state.learner.pinHash='';else if(/^\d{4,6}$/.test(lp))state.learner.pinHash=await pinHash(lp);else return toast('Learner PIN must be 4–6 digits.');}saveState();toast('Settings saved.');renderParentDashboard('settings');if(learnerUnlocked)renderHome();};
+    document.getElementById('parentPinChange').onsubmit=async e=>{e.preventDefault();const a=document.getElementById('newParentPin').value,b=document.getElementById('confirmParentPin').value;if(!/^\d{4,6}$/.test(a))return toast('Parent PIN must be 4–6 digits.');if(a!==b)return toast('The parent PINs do not match.');state.parent.pinHash=await pinHash(a);saveState();toast('Parent PIN changed.');document.getElementById('parentPinChange').reset();};
+  }
+  function parentDataHTML(){ return `<div class="admin-card"><h3>Progress data</h3><p class="muted">This flat PWA is local-first: the learner profile and progress stay in this browser/device. Export a backup before clearing browser data or moving devices. A cloud-sync backend can be added later if required.</p><div class="data-actions"><button id="exportJson" class="primary-button">Export full backup</button><button id="exportCsv" class="secondary-button">Export session CSV</button><label class="secondary-button" style="display:inline-flex;align-items:center;cursor:pointer">Import backup<input id="importJson" type="file" accept="application/json" hidden></label><button id="resetData" class="danger-button">Reset progress</button></div><div class="big-idea" style="margin-top:20px"><strong>Privacy note</strong>No account data is sent to a server in this build. The PIN prevents casual access inside the app but is not a substitute for device security.</div></div>`; }
+  function wireParentData(){
+    document.getElementById('exportJson').onclick=()=>downloadBlob(JSON.stringify(state,null,2),'nova-learning-backup.json','application/json');
+    document.getElementById('exportCsv').onclick=()=>{const rows=[['Date','Subject','Unit','Activity','Correct','Total','Minutes'],...state.progress.history.map(h=>[h.date,h.subject,h.unitTitle,modeLabel(h.mode),h.correct,h.total,Math.round((h.durationSec||0)/60)])];const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');downloadBlob(csv,'nova-learning-sessions.csv','text/csv');};
+    document.getElementById('importJson').onchange=e=>{const f=e.target.files?.[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{try{const incoming=JSON.parse(reader.result);if(!incoming.setup||!incoming.learner||!incoming.progress)throw new Error('Invalid');if(confirm('Replace the current local profile and progress with this backup?')){localStorage.setItem(KEY,JSON.stringify(incoming));state=loadState();toast('Backup imported.');renderParentDashboard('overview');}}catch(err){toast('That file is not a valid Nova Learning backup.');}};reader.readAsText(f);};
+    document.getElementById('resetData').onclick=()=>{if(confirm('Reset learning progress but keep the learner and parent setup?')){state.progress=defaultState().progress;saveState();toast('Progress reset.');renderParentDashboard('overview');if(learnerUnlocked)renderHome();}};
+  }
+  function downloadBlob(text,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),500);}
 
-  function nav(view){
-    qsa('.view').forEach(v=>v.classList.toggle('active',v.id===view+'View')); qsa('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.nav===view));
-    if(view==='progress')renderProgress(); if(view==='parent')renderParent(); if(view==='home')renderHome(); window.scrollTo({top:0,behavior:'smooth'});
-  }
-  function renderSettings(){ $('learnerName').value=data.profile.name==='Learner'?'':data.profile.name; $('dailyCount').value=String(data.settings.dailyCount); $('speechToggle').checked=!!data.settings.speech; }
-  function saveSettings(e){e.preventDefault();data.profile.name=$('learnerName').value.trim()||'Learner';data.settings.dailyCount=Number($('dailyCount').value)||12;data.settings.speech=$('speechToggle').checked;saveData();renderAll();nav('home');}
-  function exportCSV(){
-    const rows=[['Standard','Skill','Attempts','Correct','Accuracy','Last practiced']]; Object.entries(STANDARDS).forEach(([code,s])=>{const st=data.standards[code];rows.push([code,s.title,st.attempts,st.correct,st.attempts?pct(st.correct,st.attempts)+'%':'',st.last||'']);});
-    rows.push([]);rows.push(['Session date','Session','Correct','Total','Minutes']);data.history.forEach(h=>rows.push([h.date,h.label,h.correct,h.total,h.minutes]));
-    const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='nova-math-progress.csv';a.click();URL.revokeObjectURL(a.href);
-  }
-  function resetProgress(){if(!confirm('Reset all local study progress on this device? This cannot be undone.'))return;const keep={profile:data.profile,settings:data.settings};data=structuredClone(defaultData);data.profile=keep.profile;data.settings=keep.settings;saveData();renderAll();nav('home');}
-  function renderAll(){renderHome();renderProgress();renderParent();renderSettings();}
+  /* ---------- app chrome ---------- */
+  document.getElementById('homeBtn').onclick=()=>setView('home');
+  document.getElementById('navHome').onclick=()=>setView('home');
+  document.getElementById('navProgress').onclick=()=>setView('progress');
+  document.getElementById('navLogout').onclick=signOut;
+  document.getElementById('parentBtn').onclick=openParent;
+  document.getElementById('sessionClose').onclick=closeSession;
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;document.getElementById('installBtn').classList.remove('hidden');});
+  document.getElementById('installBtn').onclick=async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;document.getElementById('installBtn').classList.add('hidden');};
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
-  $('startDaily').addEventListener('click',()=>startSession({mode:'mixed',count:data.settings.dailyCount}));
-  $('quickPractice').addEventListener('click',()=>startSession({mode:'mixed',count:5}));
-  $('exitPractice').addEventListener('click',exitPractice);$('checkBtn').addEventListener('click',checkAnswer);$('nextBtn').addEventListener('click',nextQuestion);
-  $('hintBtn').addEventListener('click',()=>{const q=session.questions[session.index];$('hintBox').textContent=q.hint;$('hintBox').classList.remove('hidden');});
-  $('readBtn').addEventListener('click',speakCurrent);$('scratchBtn').addEventListener('click',()=>$('scratchPanel').classList.toggle('hidden'));
-  $('resultsHome').addEventListener('click',()=>{$('resultsOverlay').classList.add('hidden');document.body.style.overflow='';session=null;nav('home')});
-  $('reviewMistakes').addEventListener('click',()=>{$('resultsOverlay').classList.add('hidden');startSession({reviewOnly:true,mode:'mixed',count:Math.min(10,data.mistakes.length)})});
-  $('settingsForm').addEventListener('submit',saveSettings);$('downloadReport').addEventListener('click',exportCSV);$('resetProgress').addEventListener('click',resetProgress);
-  qsa('[data-nav]').forEach(b=>b.addEventListener('click',()=>nav(b.dataset.nav)));
-  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;$('installBtn').classList.remove('hidden')});
-  $('installBtn').addEventListener('click',async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;$('installBtn').classList.add('hidden')});
-  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
-  setupScratchpad();renderLessons();renderAll();
+  renderAuth();
 })();
