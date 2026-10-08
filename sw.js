@@ -1,4 +1,4 @@
-const CACHE='learning-buddy-grade5-v9-live-parent-child-flat';
+const CACHE='learning-buddy-grade5-v10-no-note';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./cloud-config.js','./curriculum.js','./question-bank.js','./extras.js','./math-extras.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./buddy-alex.jpg','./buddy-mia.jpg','./buddy-leo.jpg','./buddy-maya.jpg','./buddy-noah.jpg','./buddy-zara.jpg','./math.jpg','./ela.jpg','./science.jpg','./social.jpg','./cs.jpg','./health.jpg','./arts.jpg'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
